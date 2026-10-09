@@ -250,6 +250,31 @@
         "tasks.task:read",
         "tasks.status:write"
       ]
+    },
+    {
+      "id": "today-web",
+      "writers": [
+        "services/today-api/server.py"
+      ],
+      "does": "serves the Today web view and applies its status, priority, progress, due date, and time edits",
+      "scopes": [
+        "tasks.task:read",
+        "tasks.task:write",
+        "tasks.status:write"
+      ]
+    },
+    {
+      "id": "legacy-mcp",
+      "writers": [
+        "infra/mcp-server/src/tools/tasks.ts"
+      ],
+      "does": "the Solo Empire MCP task tools used by agents for the owner; delete_task archives instead of deleting",
+      "scopes": [
+        "tasks.task:read",
+        "tasks.task:write",
+        "tasks.status:write",
+        "tasks.archive:write"
+      ]
     }
   ],
   "not_automations": [
@@ -260,14 +285,6 @@
     {
       "writer": "infra/scripts/cli/decision-cli.py",
       "decision": "human CLI; uses the owner's own token"
-    },
-    {
-      "writer": "infra/mcp-server/src/tools/tasks.ts",
-      "decision": "retire: replaced by the empire-platform MCP adapter"
-    },
-    {
-      "writer": "services/today-api/server.py",
-      "decision": "retire: replaced by the Tasks API once Today web calls it (P1.8)"
     }
   ]
 }

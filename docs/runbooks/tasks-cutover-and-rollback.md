@@ -28,6 +28,30 @@ switch is off while SQLite accepts writes again.
 | 4. Review unmapped links | links to entities that only exist in the new system are listed in `ExportReport.links_unmapped` and stay in the PostgreSQL backup | `test_full_rollback_keeps_every_write_made_after_cutover` |
 | 5. Unfreeze SQLite | `cutover.unfreeze_sqlite()`; writers go back to SQLite | same |
 
+## Daily check and rollback signals
+
+`empire-monitor --api <tasks-api-url>` runs as the `platform_monitor` role, which
+can read identifiers, counts, versions, outbox state, and decision codes only.
+It compares each run with the previous one (`.runtime/monitor/state.json`) and
+reports `ok`, `warn`, or `breach`:
+
+| Signal | Warn | Breach (rollback criterion) |
+|---|---|---|
+| Tasks lost (fewer tasks than before beyond recorded deletions) | — | any |
+| Duplicate task numbers in a workspace | — | any |
+| Outbox oldest unpublished event | > 15 min | > 60 min |
+| Outbox event retried | ≥ 3 times | — |
+| Graph not applying published events | > 60 min | — |
+| Tasks API health check failing | at once | > 30 min |
+| Write switch off | yes | — |
+| Cross-workspace attempts denied in 24 h | any | — |
+
+In Solo Empire, `task tasks:platform:monitor` (infra) runs the check and sends
+one Telegram message through the existing alert channel on `warn` or
+`breach`. A breach is a signal; the owner decides whether to roll back.
+Not covered yet: the Tasks API 5xx rate needs request metrics from the
+hosted runtime.
+
 ## Full rehearsal on current data
 
 `python scripts/rehearse_cutover.py` copies the live SQLite database (read-only

@@ -27,6 +27,7 @@ MIGRATION_DIRS = [
     REPO_ROOT / "services" / "platform" / "migrations",
     REPO_ROOT / "services" / "tasks" / "migrations",
     REPO_ROOT / "services" / "graph" / "migrations",
+    REPO_ROOT / "services" / "monitor" / "migrations",
 ]
 DATABASE = "empire"
 SUPERUSER = "postgres"
@@ -101,7 +102,8 @@ def bootstrap(cluster: Cluster) -> None:
             conn.execute(f"CREATE DATABASE {DATABASE} OWNER empire_migrator")
     with cluster.connect(SUPERUSER, DATABASE, autocommit=True) as conn:
         conn.execute(f"REVOKE ALL ON DATABASE {DATABASE} FROM PUBLIC")
-        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api")
+        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api,"
+                     " platform_monitor")
         conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
 

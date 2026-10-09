@@ -9,6 +9,8 @@
 --                  and only the platform authorization functions.
 -- tasks_publisher  reads and marks the tasks outbox across workspaces; nothing else.
 -- graph_api        the graph service: its own schema and platform.can only.
+-- platform_monitor reads counts, versions, outbox state, and decision codes
+--                  across workspaces for the daily check; never task content.
 
 DO $$
 BEGIN
@@ -26,6 +28,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'graph_api') THEN
         CREATE ROLE graph_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'platform_monitor') THEN
+        CREATE ROLE platform_monitor LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
     END IF;
 END
 $$;

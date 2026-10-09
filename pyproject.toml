@@ -22,6 +22,7 @@ empire-contracts = "empire_platform.contracts:main"
 empire-mcp = "empire_mcp.server:main"
 empire-automations = "empire_platform.automations:main"
 empire-publish = "tasks_api.publisher:main"
+empire-monitor = "empire_platform.monitor:main"
 
 [build-system]
 requires = ["setuptools>=69"]
