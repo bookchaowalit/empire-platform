@@ -6,13 +6,15 @@ retried later with exponential backoff. Delivery is at least once: if the
 publisher stops between delivering and marking, the event is delivered again,
 so every consumer must be idempotent on the event ID.
 
-    empire-publish [--batch N]
+    empire-publish [--batch N] [--loop SECONDS]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import signal
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -62,18 +64,56 @@ def publish(connect: Callable[[], psycopg.Connection], deliver: Callable[[dict[s
     return report
 
 
+def run_loop(step: Callable[[], PublishReport], interval: float, stop: threading.Event,
+             *, max_iterations: int | None = None, max_backoff: float = 300.0,
+             log: Callable[[str], Any] | None = None) -> int:
+    """Repeat ``step`` until ``stop`` is set; one JSON line of counts per batch.
+
+    A failed delivery is retried by the outbox itself; a database error here
+    backs off exponentially and the loop keeps going. Returns the iterations run.
+    """
+    log = log or (lambda line: print(line, flush=True))
+    errors = 0
+    iterations = 0
+    while not stop.is_set() and (max_iterations is None or iterations < max_iterations):
+        iterations += 1
+        try:
+            report = step()
+        except Exception as exc:  # transient database or network error: back off, never crash-loop
+            errors += 1
+            delay = min(max_backoff, max(interval, 1.0) * 2 ** min(errors, 10))
+            log(json.dumps({"delivered": 0, "failed": 0, "error": type(exc).__name__, "retry_in": delay}))
+        else:
+            errors = 0
+            delay = interval
+            log(json.dumps({"delivered": report.delivered, "failed": report.failed}))
+        stop.wait(delay)
+    return iterations
+
+
 def main(argv: list[str] | None = None) -> int:
     from empire_platform.devdb import default_cluster
     from graph_service.consumer import GraphConsumer
 
     parser = argparse.ArgumentParser(prog="empire-publish", description=__doc__.splitlines()[0])
     parser.add_argument("--batch", type=int, default=100)
+    parser.add_argument("--loop", type=float, metavar="SECONDS", help="repeat forever, sleeping SECONDS between batches")
     args = parser.parse_args(argv)
     cluster = default_cluster()
-    report = publish(lambda: cluster.connect("tasks_publisher"), GraphConsumer(lambda: cluster.connect("graph_api")),
-                     batch=args.batch)
-    print(json.dumps(report.__dict__))
-    return 0 if not report.failed else 1
+    consumer = GraphConsumer(lambda: cluster.connect("graph_api"))
+
+    def step() -> PublishReport:
+        return publish(lambda: cluster.connect("tasks_publisher"), consumer, batch=args.batch)
+
+    if args.loop is None:
+        report = step()
+        print(json.dumps({"delivered": report.delivered, "failed": report.failed, "errors": report.errors}))
+        return 0 if not report.failed else 1
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+    run_loop(step, args.loop, stop)
+    return 0
 
 
 if __name__ == "__main__":

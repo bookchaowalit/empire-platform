@@ -68,6 +68,63 @@ Restore the last `pg_dump` into a new database with `cutover.restore()`,
 verify, then point the services at it. Restoring never overwrites the live
 database. Rehearsed by dropping the `tasks` schema on a copy and restoring.
 
+## Hosted deployment
+
+The Tasks API and the outbox publisher run on Railway against the hosted Neon
+database. One image (`Dockerfile`) serves both; `EMPIRE_SERVICE` picks the
+process. Variables are listed by name only; values live in Railway variables
+and `~/.config/empire-platform/db.env`, never in the repo.
+
+| Railway service | Config file | Variables |
+|---|---|---|
+| `tasks-api` | `railway.json` (healthcheck `/health`) | `EMPIRE_SERVICE=api`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_API`, `TASKS_API_JWT_PUBLIC_KEY_PEM`, `TASKS_API_JWT_ISSUER`, `TASKS_API_HOST=0.0.0.0` |
+| `tasks-publisher` | `railway.publisher.json` (no healthcheck) | `EMPIRE_SERVICE=publisher`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_PUBLISHER`, `EMPIRE_DB_URL_GRAPH_API`, optional `PUBLISH_INTERVAL` (seconds, default 5) |
+
+- Railway sets `PORT`; the API honors it before `TASKS_API_PORT`.
+- A single `railway.json` cannot serve both: the publisher has no HTTP port, so a
+  healthcheck would fail every deploy. In the publisher service settings set
+  "Config as code" path to `/railway.publisher.json`. No start-command override
+  is needed because the entrypoint reads `EMPIRE_SERVICE`; the equivalent manual
+  override is `empire-publish --loop 5`.
+- In hosted mode the API refuses to start without `TASKS_API_JWT_PUBLIC_KEY_PEM`
+  or with the dev issuer `empire-platform-dev`, or with the dev public key.
+  Tokens WITHOUT a delegation (`del` claim, i.e. owner tokens) are limited to
+  3600 s in every mode. Tokens WITH a delegation may live up to 30 days
+  (`TASKS_API_JWT_MAX_LIFETIME_SECONDS` overrides, hard cap 30 days); that is
+  acceptable because every call re-checks the delegation's `revoked_at` and
+  expiry, so revocation applies immediately.
+- The publisher handles SIGTERM, logs one JSON line of counts per batch, and
+  backs off on database errors instead of exiting.
+
+Signing keys. Generate once on the operator machine, never on Railway:
+
+```bash
+empire-automations keys --dir ~/.config/empire-platform/signing   # prints the public key path
+empire-automations provision --workspace SLUG --tokens ~/.config/empire-platform/tokens \
+  --key-dir ~/.config/empire-platform/signing --issuer ISSUER --ttl-days 30
+```
+
+`provision` also creates the `owner-cli` automation (scopes `tasks.task:read`,
+`tasks.task:write`, `tasks.status:write`). `infra/cli.ts` and
+`infra/scripts/cli/decision-cli.py` use that delegated `owner-cli` token like
+every other writer, so revoking its delegation cuts them off immediately.
+`owner-token` (no delegation, at most 1 hour) is for short manual sessions only:
+
+```bash
+empire-automations owner-token --workspace SLUG --name owner-manual \
+  --tokens ~/.config/empire-platform/tokens --key-dir ~/.config/empire-platform/signing --issuer ISSUER
+```
+
+Clients read tokens from `<repo>/.runtime/automation-tokens/<name>.jwt`, then
+`~/.config/empire-platform/tokens/<name>.jwt`; a token file readable by group or
+others is refused. Clients also refuse a non-https API URL unless the host is
+loopback.
+
+The private key (`private.pem`, mode 0600 in a 0700 directory) stays in
+`~/.config/empire-platform/signing`; only the contents of `public.pem` go into
+`TASKS_API_JWT_PUBLIC_KEY_PEM`. `keys` refuses to overwrite existing keys.
+Rotating means a new key pair, a new public key variable, and re-minted tokens.
+
 ## Known limits
 
 - Export covers tasks, task links, and the task hierarchy. Assignments, role

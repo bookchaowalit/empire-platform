@@ -10,6 +10,7 @@ auth provider or the agent runtime has authenticated the caller.
 from __future__ import annotations
 
 import argparse
+import os
 import time
 import uuid
 from pathlib import Path
@@ -35,6 +36,23 @@ def key_pair(directory: Path = KEY_DIR) -> tuple[str, str]:
         public_path.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM,
                                                               serialization.PublicFormat.SubjectPublicKeyInfo))
     return private_path.read_text(encoding="utf-8"), public_path.read_text(encoding="utf-8")
+
+
+def generate_keys(directory: Path) -> Path:
+    """Create an RS256 pair: private key 0600 in a 0700 dir. Never overwrites; returns the public key path."""
+    private_path, public_path = directory / "private.pem", directory / "public.pem"
+    if private_path.exists() or public_path.exists():
+        raise FileExistsError(f"keys already exist in {directory}; refusing to overwrite")
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    fd = os.open(private_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                       serialization.NoEncryption()))
+    public_path.write_bytes(key.public_key().public_bytes(serialization.Encoding.PEM,
+                                                          serialization.PublicFormat.SubjectPublicKeyInfo))
+    return public_path
 
 
 def mint(private_pem: str, *, sub: uuid.UUID, ws: uuid.UUID, delegation: uuid.UUID | None = None,

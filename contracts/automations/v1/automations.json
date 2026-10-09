@@ -275,16 +275,20 @@
         "tasks.status:write",
         "tasks.archive:write"
       ]
-    }
-  ],
-  "not_automations": [
-    {
-      "writer": "infra/cli.ts",
-      "decision": "human CLI; uses the owner's own token"
     },
     {
-      "writer": "infra/scripts/cli/decision-cli.py",
-      "decision": "human CLI; uses the owner's own token"
+      "id": "owner-cli",
+      "writers": [
+        "infra/cli.ts",
+        "infra/scripts/cli/decision-cli.py"
+      ],
+      "does": "the owner's human CLIs (tasks add/done/update/list, decision review completion); read, create, update, and complete tasks; no archive, link, assignment, or delete",
+      "scopes": [
+        "tasks.task:read",
+        "tasks.task:write",
+        "tasks.status:write"
+      ]
     }
-  ]
+  ],
+  "not_automations": []
 }

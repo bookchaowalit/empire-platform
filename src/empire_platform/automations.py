@@ -6,13 +6,16 @@ workspace owner carrying only the registry scopes. Provisioning is
 idempotent: an unchanged, unexpired delegation is kept; a changed or
 expiring one is replaced and the old one revoked.
 
-    empire-automations provision --workspace SLUG [--tokens DIR]   # local only
+    empire-automations keys --dir DIR
+    empire-automations provision --workspace SLUG [--tokens DIR] [--key-dir DIR] [--issuer ISS] [--ttl-days N]
+    empire-automations owner-token --workspace SLUG --name NAME --tokens DIR [--key-dir DIR] [--issuer ISS]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -21,10 +24,11 @@ from pathlib import Path
 
 from psycopg.rows import dict_row
 
-from empire_platform.devdb import REPO_ROOT, Cluster, default_cluster
+from empire_platform.devdb import REPO_ROOT, Cluster, default_cluster, write_private_file
 
 REGISTRY = REPO_ROOT / "contracts" / "automations" / "v1" / "automations.json"
 RENEW_BEFORE = timedelta(days=7)
+OWNER_TOKEN_MAX_TTL = 3600  # an owner token has no delegation, so nothing can revoke it
 
 
 @dataclass(frozen=True)
@@ -82,30 +86,82 @@ def provision(cluster: Cluster, workspace_id: uuid.UUID, registry: dict | None =
     return results
 
 
+def write_token(directory: Path, name: str, token: str) -> Path:
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = directory / f"{name}.jwt"
+    write_private_file(path, token)
+    return path
+
+
+def _signing_key(key_dir: Path | None) -> str:
+    from empire_platform.devtoken import key_pair
+
+    if key_dir is None:
+        return key_pair()[0]
+    private = key_dir / "private.pem"
+    if not private.is_file():
+        raise SystemExit(f"no private key in {key_dir}; run: empire-automations keys --dir {key_dir}")
+    return private.read_text(encoding="utf-8")
+
+
+def _add_key_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--key-dir", type=Path, help="directory with private.pem (default: the dev keys)")
+    parser.add_argument("--issuer", help="token issuer (default: the dev issuer)")
+
+
 def main(argv: list[str] | None = None) -> int:
+    from empire_platform.devtoken import ISSUER, generate_keys, mint
+
     parser = argparse.ArgumentParser(prog="empire-automations", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
+    keys = sub.add_parser("keys", help="generate a production RS256 key pair")
+    keys.add_argument("--dir", type=Path, required=True)
     run = sub.add_parser("provision")
-    run.add_argument("--workspace", required=True, help="workspace slug in the local cluster")
-    run.add_argument("--tokens", type=Path, help="write a short-lived dev token per automation into this directory")
+    run.add_argument("--workspace", required=True, help="workspace slug")
+    run.add_argument("--tokens", type=Path, help="write a token per automation into this directory")
+    run.add_argument("--ttl-days", type=float, help="token lifetime in days (default: 1 hour)")
+    _add_key_options(run)
+    owner = sub.add_parser("owner-token", help="token for the workspace owner (no delegation), for the CLIs")
+    owner.add_argument("--workspace", required=True)
+    owner.add_argument("--name", required=True)
+    owner.add_argument("--tokens", type=Path, required=True)
+    owner.add_argument("--ttl-days", type=float, help="token lifetime in days (at most 1 hour = 0.0416)")
+    _add_key_options(owner)
     args = parser.parse_args(argv)
+
+    if args.command == "keys":
+        try:
+            public = generate_keys(args.dir)
+        except FileExistsError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(public)
+        return 0
+
+    ttl = int(args.ttl_days * 86400) if args.ttl_days else 3600
+    if args.command == "owner-token" and ttl > OWNER_TOKEN_MAX_TTL:
+        print("owner-token is limited to 1 hour; the CLIs use the delegated owner-cli token from provision",
+              file=sys.stderr)
+        return 2
+    issuer = args.issuer or ISSUER
     cluster = default_cluster()
     with cluster.connect("postgres") as conn:
-        found = conn.execute("SELECT id FROM platform.workspaces WHERE slug = %s", (args.workspace,)).fetchone()
+        found = conn.execute("SELECT id, owner_identity_id FROM platform.workspaces WHERE slug = %s",
+                             (args.workspace,)).fetchone()
     if not found:
         print(f"unknown workspace {args.workspace}", file=sys.stderr)
         return 2
+    private_pem = _signing_key(args.key_dir)
+    if args.command == "owner-token":
+        write_token(args.tokens, args.name, mint(private_pem, sub=found[1], ws=found[0], ttl=ttl, issuer=issuer))
+        print(f"{args.name:20} owner token written")
+        return 0
     results = provision(cluster, found[0])
     if args.tokens:
-        from empire_platform.devtoken import key_pair, mint
-
-        private_pem, _ = key_pair()
-        args.tokens.mkdir(parents=True, exist_ok=True, mode=0o700)
         for item in results:
-            path = args.tokens / f"{item.automation}.jwt"
-            path.write_text(mint(private_pem, sub=item.identity, ws=found[0], delegation=item.delegation,
-                                 obo=item.owner, ttl=3600), encoding="utf-8")
-            path.chmod(0o600)
+            write_token(args.tokens, item.automation,
+                        mint(private_pem, sub=item.identity, ws=found[0], delegation=item.delegation,
+                             obo=item.owner, ttl=ttl, issuer=issuer))
     for item in results:
         print(f"{item.automation:20} {'renewed' if item.renewed else 'kept':8} {', '.join(item.scopes)}")
     return 0

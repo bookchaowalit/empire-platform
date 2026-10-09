@@ -21,9 +21,10 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -36,7 +37,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
 
 from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
-from tasks_api.auth import Principal, TokenVerifier, Unauthenticated
+from tasks_api.auth import HARD_MAX_LIFETIME_SECONDS, Principal, TokenVerifier, Unauthenticated
 
 Status = Literal["todo", "in_progress", "done", "blocked", "cancelled"]
 Relation = Literal["supports-goal", "belongs-to", "related-to", "depends-on", "part-of"]
@@ -1144,14 +1145,55 @@ def create_app(
     return app
 
 
+DEV_ISSUER = "empire-platform-dev"
+HOSTED_MAX_LIFETIME = HARD_MAX_LIFETIME_SECONDS  # delegated tokens only: each call re-checks delegation and revocation
+
+
+def _pem_digest(pem: str) -> str:
+    """SHA-256 of the PEM with whitespace and line wrapping removed."""
+    return hashlib.sha256("".join(pem.split()).encode()).hexdigest()
+
+
+def _dev_key_digest() -> str | None:
+    path = Path(__file__).resolve().parents[3] / ".runtime" / "dev-keys" / "public.pem"
+    return _pem_digest(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+
+@dataclass(frozen=True)
+class ServerConfig:
+    public_key_pem: str
+    issuer: str
+    host: str
+    port: int
+    max_lifetime: int = 3600
+
+
+def server_config(env: Mapping[str, str] | None = None) -> ServerConfig:
+    """Read the process settings; in hosted mode the dev issuer or a missing PEM is refused."""
+    env = os.environ if env is None else env
+    hosted = env.get("EMPIRE_DB_MODE") == "hosted"
+    issuer = env.get("TASKS_API_JWT_ISSUER") or DEV_ISSUER
+    pem = env.get("TASKS_API_JWT_PUBLIC_KEY_PEM", "").strip()
+    if hosted and (not pem or issuer == DEV_ISSUER):
+        raise SystemExit("hosted mode needs TASKS_API_JWT_PUBLIC_KEY_PEM and a non-dev TASKS_API_JWT_ISSUER")
+    if hosted and _pem_digest(pem) == _dev_key_digest():
+        raise SystemExit("hosted mode refuses the dev public key")
+    if not pem:
+        pem = Path(env.get("TASKS_API_JWT_PUBLIC_KEY", ".runtime/dev-keys/public.pem")).read_text(encoding="utf-8")
+    port = int(env.get("PORT") or env.get("TASKS_API_PORT") or "3601")
+    lifetime = int(env.get("TASKS_API_JWT_MAX_LIFETIME_SECONDS") or (HOSTED_MAX_LIFETIME if hosted else 3600))
+    if not 0 < lifetime <= HARD_MAX_LIFETIME_SECONDS:
+        raise SystemExit(f"TASKS_API_JWT_MAX_LIFETIME_SECONDS must be between 1 and {HARD_MAX_LIFETIME_SECONDS}")
+    return ServerConfig(pem, issuer, env.get("TASKS_API_HOST") or "127.0.0.1", port, lifetime)
+
+
 def main() -> None:
     import uvicorn
 
     from empire_platform.devdb import default_cluster
 
-    key_path = Path(os.environ.get("TASKS_API_JWT_PUBLIC_KEY", ".runtime/dev-keys/public.pem"))
-    verifier = TokenVerifier(key_path.read_text(encoding="utf-8"),
-                             os.environ.get("TASKS_API_JWT_ISSUER", "empire-platform-dev"))
+    config = server_config()
+    verifier = TokenVerifier(config.public_key_pem, config.issuer, max_lifetime=config.max_lifetime)
     cluster = default_cluster()
     app = create_app(lambda: cluster.connect("tasks_api"), verifier)
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("TASKS_API_PORT", "3601")))
+    uvicorn.run(app, host=config.host, port=config.port)

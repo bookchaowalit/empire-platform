@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,7 +32,21 @@ MIGRATION_DIRS = [
 ]
 DATABASE = "empire"
 SUPERUSER = "postgres"
+HOSTED_SSLMODES = ("require", "verify-ca", "verify-full")
 PORT = 5432  # only used to name the Unix socket file; TCP is disabled
+
+
+def write_private_file(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` atomically with mode 0600 (temp file in the same directory)."""
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
 
 
 def pg_bin_dir() -> Path:
@@ -88,7 +103,61 @@ class Cluster:
         return psycopg.connect(self.conninfo(role, dbname), **kwargs)
 
 
-def default_cluster() -> Cluster:
+HOSTED_SECRETS = Path(os.environ.get("EMPIRE_DB_SECRETS", Path.home() / ".config" / "empire-platform" / "db.env"))
+
+
+@dataclass
+class HostedCluster:
+    """A hosted database (Neon): one connection URL per role, never in the repo.
+
+    URLs come from ``EMPIRE_DB_URL_<ROLE>`` in the environment (Railway
+    variables) or from the owner-only file ``~/.config/empire-platform/db.env``
+    (local operator commands). The database name is part of each URL; there is
+    no superuser, so backup and restore use the migrator role.
+    """
+
+    urls: dict[str, str]
+
+    @classmethod
+    def from_env(cls, secrets: Path = HOSTED_SECRETS) -> "HostedCluster":
+        urls: dict[str, str] = {}
+        if secrets.is_file():
+            if secrets.stat().st_mode & 0o077:
+                raise SystemExit(f"{secrets} must be readable by its owner only (chmod 600)")
+            for line in secrets.read_text(encoding="utf-8").splitlines():
+                key, sep, value = line.strip().partition("=")
+                if sep and key.startswith("EMPIRE_DB_URL_"):
+                    urls[key.removeprefix("EMPIRE_DB_URL_").lower()] = value.strip()
+        for key, value in os.environ.items():
+            if key.startswith("EMPIRE_DB_URL_") and value:
+                urls[key.removeprefix("EMPIRE_DB_URL_").lower()] = value
+        return cls(urls)
+
+    def conninfo(self, role: str, dbname: str = DATABASE) -> str:
+        role = "empire_migrator" if role == SUPERUSER else role
+        if role not in self.urls:
+            raise SystemExit(f"no connection URL for role {role}: set EMPIRE_DB_URL_{role.upper()}")
+        url = self.urls[role]
+        parts = urllib.parse.urlsplit(url)
+        query = urllib.parse.parse_qs(parts.query)
+        # Unix-socket URLs (host=/path) are local and have no TLS; everything else must verify TLS.
+        local = any(host.startswith("/") for host in query.get("host", []))
+        if not local and query.get("sslmode", [""])[-1] not in HOSTED_SSLMODES:
+            raise SystemExit(f"connection URL for role {role} needs sslmode=require, verify-ca or verify-full")
+        return url
+
+    def connect(self, role: str, dbname: str = DATABASE, **kwargs) -> psycopg.Connection:
+        # Neon's pooler cannot keep prepared statements; direct endpoints are used.
+        return psycopg.connect(self.conninfo(role, dbname), **kwargs)
+
+    def running(self) -> bool:
+        return True
+
+
+def default_cluster() -> Cluster | HostedCluster:
+    """The local development cluster, or the hosted one when EMPIRE_DB_MODE=hosted."""
+    if os.environ.get("EMPIRE_DB_MODE") == "hosted":
+        return HostedCluster.from_env()
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
     return Cluster(REPO_ROOT / ".runtime" / "pgdata", runtime / "empire-platform")
 

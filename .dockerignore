@@ -1,0 +1,9 @@
+.venv
+.runtime
+.git
+.pytest_cache
+__pycache__
+*.egg-info
+tests
+DOCPACK
+docs
