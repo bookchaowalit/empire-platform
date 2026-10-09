@@ -49,6 +49,11 @@ TASK_COLUMNS = (
     "external_source", "external_id", "external_url", "archived_at", "archive_reason",
     "version", "created_at", "updated_at", "legacy_id",
 )
+# Parent references also as task numbers, so callers never need a second lookup.
+TASK_FIELDS = ", ".join(TASK_COLUMNS) + (
+    ", (SELECT p.legacy_id FROM tasks.tasks p WHERE p.id = tasks.tasks.parent_task_id) AS parent_number"
+    ", (SELECT p.legacy_id FROM tasks.tasks p WHERE p.id = tasks.tasks.parent_recurring_id) AS parent_recurring_number"
+)
 # PATCH fields that narrower automation permissions may change.
 STATUS_FIELDS = {"status", "due_date", "progress_percent"}
 CALENDAR_FIELDS = {"calendar_event_id"}
@@ -137,7 +142,7 @@ class LinkCreate(BaseModel):
     relation: Relation
     target_type: TargetType
     target_ref: str = Field(pattern=r"^empire:[a-z0-9-]+:[a-z0-9-]+:[A-Za-z0-9:._-]+$")
-
+    attributes: dict[str, Any] | None = Field(default=None, description="Replaces stored attributes when given")
 
 class Task(BaseModel):
     id: uuid.UUID
@@ -155,6 +160,7 @@ class Task(BaseModel):
     progress_percent: int
     notes: str | None
     parent_task_id: uuid.UUID | None
+    parent_number: int | None = None
     calendar_event_id: str | None
     started_at: datetime | None
     estimated_minutes: int | None
@@ -166,6 +172,7 @@ class Task(BaseModel):
     is_recurring_instance: bool
     recurrence_occurrence: int | None
     parent_recurring_id: uuid.UUID | None
+    parent_recurring_number: int | None = None
     external_source: str | None
     external_id: str | None
     external_url: str | None
@@ -178,6 +185,110 @@ class Task(BaseModel):
 
 class TaskList(BaseModel):
     items: list[Task]
+
+
+class StatGroup(BaseModel):
+    key: str | None
+    count: int
+
+
+class TaskStats(BaseModel):
+    total: int
+    groups: list[StatGroup]
+
+
+class LinkItem(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    task_number: int
+    relation: Relation
+    target_type: TargetType
+    target_ref: str
+    attributes: dict[str, Any]
+
+
+class LinkList(BaseModel):
+    items: list[LinkItem]
+
+
+class AssignmentPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    assignee_type: Literal["identity", "role", "team"]
+    assignee_ref: str = Field(min_length=1, max_length=200)
+    assignee_name: str | None = Field(default=None, max_length=200)
+    assignment_type: Literal["assigned", "cc", "viewer"] = "assigned"
+
+
+class Assignment(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    task_number: int
+    assignee_type: Literal["identity", "role", "team"]
+    assignee_ref: str
+    assignee_name: str | None
+    assignment_type: Literal["assigned", "cc", "viewer"]
+
+
+class AssignmentList(BaseModel):
+    items: list[Assignment]
+
+
+class AssignmentResult(BaseModel):
+    outcome: Literal["created", "unchanged"]
+
+
+class RoleSuggestionPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role_id: str = Field(min_length=1, max_length=200)
+    source_registry: str = Field(min_length=1, max_length=300)
+    confidence: Literal["high", "medium", "low"]
+    match_reason: str = Field(min_length=1, max_length=2000)
+    review_status: Literal["suggested", "accepted", "dismissed"] | None = None
+
+
+class RoleSuggestionReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role_id: str = Field(min_length=1, max_length=200)
+    source_registry: str = Field(min_length=1, max_length=300)
+    review_status: Literal["suggested", "accepted", "dismissed"]
+    expected_status: Literal["suggested", "accepted", "dismissed"] | None = None
+
+
+class RoleSuggestion(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    task_number: int
+    role_id: str
+    confidence: Literal["high", "medium", "low"]
+    match_reason: str
+    review_status: Literal["suggested", "accepted", "dismissed"]
+    source_registry: str
+    updated_at: datetime
+
+
+class RoleSuggestionList(BaseModel):
+    items: list[RoleSuggestion]
+
+
+class RoleSuggestionResult(BaseModel):
+    outcome: Literal["created", "updated", "unchanged"]
+
+
+class TaskType(BaseModel):
+    id: uuid.UUID
+    number: int | None
+    name: str
+    description: str | None
+    icon: str | None
+    color: str | None
+    default_status: str
+    allowed_statuses: list[str]
+    is_active: bool
+    sort_order: int
+
+
+class TaskTypeList(BaseModel):
+    items: list[TaskType]
 
 
 class Link(BaseModel):
@@ -198,7 +309,9 @@ def urn(task_id: uuid.UUID) -> str:
 
 
 def to_task(row: dict[str, Any]) -> Task:
-    return Task(urn=urn(row["id"]), number=row["legacy_id"], **{k: row[k] for k in TASK_COLUMNS if k != "legacy_id"})
+    return Task(urn=urn(row["id"]), number=row["legacy_id"], parent_number=row.get("parent_number"),
+                parent_recurring_number=row.get("parent_recurring_number"),
+                **{k: row[k] for k in TASK_COLUMNS if k != "legacy_id"})
 
 
 def audit_log(**fields: Any) -> None:
@@ -313,7 +426,7 @@ def create_app(
 
     def load(conn: psycopg.Connection, task_id: uuid.UUID, *, lock: bool = False) -> dict[str, Any]:
         row = conn.execute(
-            f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE id = %s{' FOR UPDATE' if lock else ''}",
+            f"SELECT {TASK_FIELDS} FROM tasks.tasks WHERE id = %s{' FOR UPDATE' if lock else ''}",
             (task_id,),
         ).fetchone()
         if row is None:
@@ -390,41 +503,102 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    def task_filters(
+        status: Annotated[list[Status] | None, Query()] = None,
+        external_source: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")] = None,
+        no_external_source: Annotated[bool, Query(description="Only tasks created locally")] = False,
+        project: Annotated[str | None, Query(max_length=200)] = None,
+        category: Annotated[str | None, Query(max_length=100)] = None,
+        priority_max: Annotated[int | None, Query(ge=1, le=5)] = None,
+        due_from: date | None = None,
+        due_before: date | None = None,
+        completed_from: datetime | None = None,
+        completed_before: datetime | None = None,
+        created_from: datetime | None = None,
+        created_before: datetime | None = None,
+        reminder_due_before: datetime | None = None,
+        missing_calendar_event: bool = False,
+        numbers: Annotated[list[int] | None, Query(max_length=500)] = None,
+        parent: Annotated[int | None, Query(ge=0, description="Children of this task number")] = None,
+        q: Annotated[str | None, Query(max_length=200, description="Case-insensitive text in title or description")] = None,
+        include_archived: bool = False,
+    ) -> tuple[str, dict[str, Any]]:
+        """One WHERE clause shared by the list and the stats endpoints."""
+        where = (
+            " WHERE (%(archived)s OR archived_at IS NULL)"
+            " AND (%(status)s::text[] IS NULL OR status = ANY(%(status)s))"
+            " AND (%(source)s::text IS NULL OR external_source = %(source)s)"
+            " AND (NOT %(local)s OR external_source IS NULL)"
+            " AND (%(project)s::text IS NULL OR project = %(project)s)"
+            " AND (%(category)s::text IS NULL OR category = %(category)s)"
+            " AND (%(priority_max)s::int IS NULL OR priority <= %(priority_max)s)"
+            " AND (%(due_from)s::date IS NULL OR due_date >= %(due_from)s)"
+            " AND (%(due)s::date IS NULL OR due_date < %(due)s)"
+            " AND (%(completed_from)s::timestamptz IS NULL OR completed_at >= %(completed_from)s)"
+            " AND (%(completed_before)s::timestamptz IS NULL OR completed_at < %(completed_before)s)"
+            " AND (%(created_from)s::timestamptz IS NULL OR created_at >= %(created_from)s)"
+            " AND (%(created_before)s::timestamptz IS NULL OR created_at < %(created_before)s)"
+            " AND (%(reminder)s::timestamptz IS NULL OR (reminder_at <= %(reminder)s AND NOT reminder_sent))"
+            " AND (NOT %(calendar)s OR calendar_event_id IS NULL)"
+            " AND (%(numbers)s::bigint[] IS NULL OR legacy_id = ANY(%(numbers)s))"
+            " AND (%(parent)s::bigint IS NULL OR parent_task_id ="
+            "      (SELECT p.id FROM tasks.tasks p WHERE p.legacy_id = %(parent)s))"
+            " AND (%(q)s::text IS NULL OR title ILIKE %(q)s OR description ILIKE %(q)s)"
+        )
+        like = None if q is None else "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        return where, {
+            "archived": include_archived, "status": status, "source": external_source, "local": no_external_source,
+            "project": project, "category": category, "priority_max": priority_max, "due_from": due_from,
+            "due": due_before, "completed_from": completed_from, "completed_before": completed_before,
+            "created_from": created_from, "created_before": created_before, "reminder": reminder_due_before,
+            "calendar": missing_calendar_event, "numbers": numbers, "parent": parent, "q": like,
+        }
+
+    Filters = Annotated[tuple[str, dict[str, Any]], Depends(task_filters)]
+
     @app.get("/v1/tasks", response_model=TaskList, responses={401: {"model": Problem}, 403: {"model": Problem}})
     def list_tasks(
         caller: Caller,
-        status: Annotated[list[Status] | None, Query()] = None,
-        external_source: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")] = None,
-        due_before: date | None = None,
-        reminder_due_before: datetime | None = None,
-        missing_calendar_event: bool = False,
-        include_archived: bool = False,
+        filters: Filters,
         after: Annotated[int | None, Query(ge=0, description="Cursor: return tasks numbered above this")] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
     ) -> TaskList:
-        """Filters cover what the SQLite-era writers selected; results are ordered by task number."""
+        """Filters cover what the SQLite-era readers and writers selected; ordered by task number."""
         precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        where, params = filters
         with bound(caller) as conn:
             rows = conn.execute(
-                f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
-                " WHERE (%(archived)s OR archived_at IS NULL)"
-                " AND (%(status)s::text[] IS NULL OR status = ANY(%(status)s))"
-                " AND (%(source)s::text IS NULL OR external_source = %(source)s)"
-                " AND (%(due)s::date IS NULL OR due_date < %(due)s)"
-                " AND (%(reminder)s::timestamptz IS NULL OR (reminder_at <= %(reminder)s AND NOT reminder_sent))"
-                " AND (NOT %(calendar)s OR calendar_event_id IS NULL)"
+                f"SELECT {TASK_FIELDS} FROM tasks.tasks{where}"
                 " AND (%(after)s::bigint IS NULL OR legacy_id > %(after)s)"
                 " ORDER BY legacy_id LIMIT %(limit)s",
-                {"archived": include_archived, "status": status, "source": external_source, "due": due_before,
-                 "reminder": reminder_due_before, "calendar": missing_calendar_event, "after": after, "limit": limit},
+                {**params, "after": after, "limit": limit},
             ).fetchall()
         return TaskList(items=[to_task(row) for row in rows])
+
+    @app.get("/v1/tasks/stats", response_model=TaskStats, responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def task_stats(
+        caller: Caller,
+        filters: Filters,
+        group_by: Literal["status", "priority", "project", "category"] | None = None,
+    ) -> TaskStats:
+        """Counts for dashboards without moving every task over the wire."""
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        where, params = filters
+        with bound(caller) as conn:
+            total = conn.execute(f"SELECT count(*) AS n FROM tasks.tasks{where}", params).fetchone()["n"]
+            groups: list[StatGroup] = []
+            if group_by:
+                rows = conn.execute(
+                    f"SELECT {group_by}::text AS key, count(*) AS n FROM tasks.tasks{where}"
+                    f" GROUP BY {group_by} ORDER BY n DESC, key", params).fetchall()
+                groups = [StatGroup(key=row["key"], count=row["n"]) for row in rows]
+        return TaskStats(total=total, groups=groups)
 
     @app.get("/v1/tasks/number/{number}", response_model=Task,
              responses={401: {"model": Problem}, 404: {"model": Problem}})
     def get_by_number(caller: Caller, number: int) -> Task:
         with bound(caller) as conn:
-            row = conn.execute(f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE legacy_id = %s",
+            row = conn.execute(f"SELECT {TASK_FIELDS} FROM tasks.tasks WHERE legacy_id = %s",
                                (number,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail={"error": "not_found"})
@@ -436,7 +610,7 @@ def create_app(
     def get_external(caller: Caller, source: Annotated[str, Path_(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")],
                      external_id: Annotated[str, Path_(min_length=1, max_length=200)]) -> Task:
         with bound(caller) as conn:
-            row = conn.execute(f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
+            row = conn.execute(f"SELECT {TASK_FIELDS} FROM tasks.tasks"
                                " WHERE external_source = %s AND external_id = %s", (source, external_id)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail={"error": "not_found"})
@@ -454,7 +628,7 @@ def create_app(
                 previous = conn.execute("SELECT * FROM platform.find_execution(%s)", (idempotency_key,)).fetchone()
                 if previous and previous["status"] == "succeeded":
                     row = conn.execute(
-                        f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE created_by_execution = %s",
+                        f"SELECT {TASK_FIELDS} FROM tasks.tasks WHERE created_by_execution = %s",
                         (previous["id"],),
                     ).fetchone()
                     if row:
@@ -468,7 +642,7 @@ def create_app(
             columns = list(values)
             row = conn.execute(
                 f"INSERT INTO tasks.tasks ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})"
-                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                f" RETURNING {TASK_FIELDS}",
                 [values[c] for c in columns],
             ).fetchone()
             emit(conn, caller, execution, "created", row["id"], None, row)
@@ -517,7 +691,7 @@ def create_app(
             assignments = ", ".join(f"{column} = %s" for column in updates)
             return conn.execute(
                 f"UPDATE tasks.tasks SET {assignments}, updated_by_execution = %s WHERE id = %s"
-                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                f" RETURNING {TASK_FIELDS}",
                 [*updates.values(), execution, task_id],
             ).fetchone()
 
@@ -536,7 +710,7 @@ def create_app(
             return conn.execute(
                 "UPDATE tasks.tasks SET status = 'done', completed_at = coalesce(completed_at, now()),"
                 " progress_percent = 100, updated_by_execution = %s WHERE id = %s"
-                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                f" RETURNING {TASK_FIELDS}",
                 (execution, task_id),
             ).fetchone()
 
@@ -561,11 +735,14 @@ def create_app(
 
         def apply(conn, before, execution):
             row = conn.execute(
-                "INSERT INTO tasks.task_links (workspace_id, task_id, relation, target_type, target_ref)"
-                " VALUES (%s, %s, %s, %s, %s)"
-                " ON CONFLICT (task_id, relation, target_ref) DO UPDATE SET updated_at = now()"
+                "INSERT INTO tasks.task_links (workspace_id, task_id, relation, target_type, target_ref, attributes)"
+                " VALUES (%s, %s, %s, %s, %s, COALESCE(%s::jsonb, '{}'::jsonb))"
+                " ON CONFLICT (task_id, relation, target_ref) DO UPDATE"
+                " SET attributes = COALESCE(%s::jsonb, tasks.task_links.attributes), updated_at = now()"
                 " RETURNING id, task_id, relation, target_type, target_ref",
-                (caller.workspace, task_id, body.relation, body.target_type, body.target_ref),
+                (caller.workspace, task_id, body.relation, body.target_type, body.target_ref,
+                 None if body.attributes is None else json.dumps(body.attributes),
+                 None if body.attributes is None else json.dumps(body.attributes)),
             ).fetchone()
             created.update(row)
             return before
@@ -594,7 +771,7 @@ def create_app(
                 f"INSERT INTO tasks.tasks ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})"
                 " ON CONFLICT (workspace_id, external_source, external_id)"
                 " WHERE external_source IS NOT NULL AND external_id IS NOT NULL DO NOTHING"
-                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                f" RETURNING {TASK_FIELDS}",
                 [values[c] for c in columns],
             ).fetchone()
             if row is not None:
@@ -602,7 +779,7 @@ def create_app(
                 response.status_code = 201
                 return UpsertResult(outcome="created", task=to_task(row))
             before = conn.execute(
-                f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
+                f"SELECT {TASK_FIELDS} FROM tasks.tasks"
                 " WHERE external_source = %s AND external_id = %s FOR UPDATE",
                 (source, external_id),
             ).fetchone()
@@ -614,7 +791,7 @@ def create_app(
             assignments = ", ".join(f"{column} = %s" for column in changes)
             after = conn.execute(
                 f"UPDATE tasks.tasks SET {assignments}, updated_by_execution = %s WHERE id = %s"
-                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                f" RETURNING {TASK_FIELDS}",
                 [*changes.values(), execution, before["id"]],
             ).fetchone()
             emit(conn, caller, execution, "updated", after["id"], before, after)
@@ -626,7 +803,7 @@ def create_app(
         def apply(conn, before, execution):
             return conn.execute(
                 "UPDATE tasks.tasks SET archived_at = coalesce(archived_at, now()), archive_reason = %s,"
-                f" updated_by_execution = %s WHERE id = %s RETURNING {', '.join(TASK_COLUMNS)}",
+                f" updated_by_execution = %s WHERE id = %s RETURNING {TASK_FIELDS}",
                 (body.reason, execution, task_id),
             ).fetchone()
 
@@ -639,7 +816,7 @@ def create_app(
         def apply(conn, before, execution):
             return conn.execute(
                 "UPDATE tasks.tasks SET archived_at = NULL, archive_reason = NULL, updated_by_execution = %s"
-                f" WHERE id = %s RETURNING {', '.join(TASK_COLUMNS)}",
+                f" WHERE id = %s RETURNING {TASK_FIELDS}",
                 (execution, task_id),
             ).fetchone()
 
@@ -661,7 +838,7 @@ def create_app(
                 return ReminderResult(outcome="already_recorded")
             after = conn.execute(
                 "UPDATE tasks.tasks SET reminder_sent = true, updated_by_execution = %s"
-                f" WHERE id = %s AND reminder_at = %s RETURNING {', '.join(TASK_COLUMNS)}",
+                f" WHERE id = %s AND reminder_at = %s RETURNING {TASK_FIELDS}",
                 (execution, task_id, body.reminder_at),
             ).fetchone() or before
             emit(conn, caller, execution, "tasks.reminder.delivered", task_id, before, after,
@@ -694,7 +871,7 @@ def create_app(
                     " parent_recurring_id, created_by_execution, updated_by_execution)"
                     " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s, %s, %s)"
                     " ON CONFLICT (parent_recurring_id, recurrence_occurrence) WHERE parent_recurring_id IS NOT NULL"
-                    f" DO NOTHING RETURNING {', '.join(TASK_COLUMNS)}",
+                    f" DO NOTHING RETURNING {TASK_FIELDS}",
                     (caller.workspace, f"[R{occurrence}] {parent['title']}", parent["description"],
                      parent["priority"], parent["project"], parent["tags"], parent["category"], next_due,
                      parent["recurrence_rule"], parent["estimated_minutes"], occurrence, task_id, execution, execution),
@@ -704,6 +881,179 @@ def create_app(
                     created.append(to_task(row))
                 next_due = next_due + step
             return OccurrenceResult(created=created, existing=len(existing))
+
+    # ── relations: links, assignments, role suggestions, types ──────────
+    def by_number(conn: psycopg.Connection, number: int | None) -> uuid.UUID | None:
+        if number is None:
+            return None
+        row = conn.execute("SELECT id FROM tasks.tasks WHERE legacy_id = %s", (number,)).fetchone()
+        return row["id"] if row else uuid.UUID(int=0)
+
+    @app.get("/v1/task-links", response_model=LinkList, responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_links(
+        caller: Caller,
+        task: Annotated[int | None, Query(ge=0, description="Task number")] = None,
+        relation: Relation | None = None,
+        target_type: TargetType | None = None,
+        target_ref: Annotated[str | None, Query(max_length=300)] = None,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> LinkList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                "SELECT l.id, l.task_id, t.legacy_id AS task_number, l.relation, l.target_type, l.target_ref,"
+                " l.attributes FROM tasks.task_links l JOIN tasks.tasks t ON t.id = l.task_id"
+                " WHERE (%(task)s::uuid IS NULL OR l.task_id = %(task)s)"
+                " AND (%(relation)s::text IS NULL OR l.relation = %(relation)s)"
+                " AND (%(type)s::text IS NULL OR l.target_type = %(type)s)"
+                " AND (%(ref)s::text IS NULL OR l.target_ref = %(ref)s)"
+                " ORDER BY t.legacy_id, l.created_at, l.id OFFSET %(offset)s LIMIT %(limit)s",
+                {"task": by_number(conn, task), "relation": relation, "type": target_type, "ref": target_ref,
+                 "offset": offset, "limit": limit},
+            ).fetchall()
+        return LinkList(items=[LinkItem(**row) for row in rows])
+
+    @app.get("/v1/task-assignments", response_model=AssignmentList,
+             responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_assignments(
+        caller: Caller,
+        task: Annotated[int | None, Query(ge=0)] = None,
+        assignee_type: Literal["identity", "role", "team"] | None = None,
+        assignee_ref: Annotated[str | None, Query(max_length=200)] = None,
+        assignment_type: Literal["assigned", "cc", "viewer"] | None = None,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> AssignmentList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                "SELECT a.id, a.task_id, t.legacy_id AS task_number, a.assignee_type, a.assignee_ref,"
+                " a.assignee_name, a.assignment_type FROM tasks.task_assignments a"
+                " JOIN tasks.tasks t ON t.id = a.task_id"
+                " WHERE (%(task)s::uuid IS NULL OR a.task_id = %(task)s)"
+                " AND (%(type)s::text IS NULL OR a.assignee_type = %(type)s)"
+                " AND (%(ref)s::text IS NULL OR a.assignee_ref = %(ref)s)"
+                " AND (%(kind)s::text IS NULL OR a.assignment_type = %(kind)s)"
+                " ORDER BY t.legacy_id, a.created_at, a.id OFFSET %(offset)s LIMIT %(limit)s",
+                {"task": by_number(conn, task), "type": assignee_type, "ref": assignee_ref, "kind": assignment_type,
+                 "offset": offset, "limit": limit},
+            ).fetchall()
+        return AssignmentList(items=[Assignment(**row) for row in rows])
+
+    @app.put("/v1/tasks/{task_id}/assignments", response_model=AssignmentResult,
+             responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def assign_task(caller: Caller, task_id: uuid.UUID, body: AssignmentPut) -> AssignmentResult:
+        """Idempotent: assigning the same assignee twice changes nothing."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            row = conn.execute(
+                "INSERT INTO tasks.task_assignments (workspace_id, task_id, assignee_type, assignee_ref, assignee_name,"
+                " assignment_type) VALUES (%s, %s, %s, %s, %s, %s)"
+                " ON CONFLICT (task_id, assignee_type, assignee_ref, assignment_type) DO NOTHING RETURNING id",
+                (caller.workspace, task_id, body.assignee_type, body.assignee_ref, body.assignee_name,
+                 body.assignment_type),
+            ).fetchone()
+            outcome["value"] = "created" if row else "unchanged"
+            return before
+
+        change(caller, task_id, "tasks.assignment:write", "assigned", apply,
+               extra={"assignee_type": body.assignee_type, "assignment_type": body.assignment_type})
+        return AssignmentResult(outcome=outcome["value"])
+
+    @app.get("/v1/task-role-suggestions", response_model=RoleSuggestionList,
+             responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_role_suggestions(
+        caller: Caller,
+        task: Annotated[int | None, Query(ge=0)] = None,
+        role_id: Annotated[str | None, Query(max_length=200)] = None,
+        source_registry: Annotated[str | None, Query(max_length=300)] = None,
+        review_status: Literal["suggested", "accepted", "dismissed"] | None = None,
+        confidence: Literal["high", "medium", "low"] | None = None,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> RoleSuggestionList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                "SELECT s.id, s.task_id, t.legacy_id AS task_number, s.role_id, s.confidence, s.match_reason,"
+                " s.review_status, s.source_registry, s.updated_at FROM tasks.task_role_suggestions s"
+                " JOIN tasks.tasks t ON t.id = s.task_id"
+                " WHERE (%(task)s::uuid IS NULL OR s.task_id = %(task)s)"
+                " AND (%(role)s::text IS NULL OR s.role_id = %(role)s)"
+                " AND (%(registry)s::text IS NULL OR s.source_registry = %(registry)s)"
+                " AND (%(review)s::text IS NULL OR s.review_status = %(review)s)"
+                " AND (%(confidence)s::text IS NULL OR s.confidence = %(confidence)s)"
+                " ORDER BY t.legacy_id, s.role_id, s.id OFFSET %(offset)s LIMIT %(limit)s",
+                {"task": by_number(conn, task), "role": role_id, "registry": source_registry,
+                 "review": review_status, "confidence": confidence, "offset": offset, "limit": limit},
+            ).fetchall()
+        return RoleSuggestionList(items=[RoleSuggestion(**row) for row in rows])
+
+    @app.put("/v1/tasks/{task_id}/role-suggestions", response_model=RoleSuggestionResult,
+             responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def suggest_role(caller: Caller, task_id: uuid.UUID, body: RoleSuggestionPut) -> RoleSuggestionResult:
+        """Upsert by (task, role, registry); a review decision already made is kept unless one is given."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            current = conn.execute(
+                "SELECT confidence, match_reason, review_status FROM tasks.task_role_suggestions"
+                " WHERE task_id = %s AND role_id = %s AND source_registry = %s FOR UPDATE",
+                (task_id, body.role_id, body.source_registry)).fetchone()
+            wanted = {"confidence": body.confidence, "match_reason": body.match_reason,
+                      "review_status": body.review_status or (current or {}).get("review_status") or "suggested"}
+            if current is None:
+                conn.execute(
+                    "INSERT INTO tasks.task_role_suggestions (workspace_id, task_id, role_id, confidence, match_reason,"
+                    " review_status, source_registry) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (caller.workspace, task_id, body.role_id, wanted["confidence"], wanted["match_reason"],
+                     wanted["review_status"], body.source_registry))
+                outcome["value"] = "created"
+            elif dict(current) != wanted:
+                conn.execute(
+                    "UPDATE tasks.task_role_suggestions SET confidence = %s, match_reason = %s, review_status = %s,"
+                    " updated_at = now() WHERE task_id = %s AND role_id = %s AND source_registry = %s",
+                    (wanted["confidence"], wanted["match_reason"], wanted["review_status"], task_id, body.role_id,
+                     body.source_registry))
+                outcome["value"] = "updated"
+            else:
+                outcome["value"] = "unchanged"
+            return before
+
+        change(caller, task_id, "tasks.suggestion:write", "role-suggested", apply, extra={"role_id": body.role_id})
+        return RoleSuggestionResult(outcome=outcome["value"])
+
+    @app.patch("/v1/tasks/{task_id}/role-suggestions", response_model=RoleSuggestionResult,
+               responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def review_role(caller: Caller, task_id: uuid.UUID, body: RoleSuggestionReview) -> RoleSuggestionResult:
+        """Change the review status; with expected_status it only moves from that status (compare-and-set)."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            row = conn.execute(
+                "UPDATE tasks.task_role_suggestions SET review_status = %s, updated_at = now()"
+                " WHERE task_id = %s AND role_id = %s AND source_registry = %s"
+                " AND (%s::text IS NULL OR review_status = %s) AND review_status <> %s RETURNING id",
+                (body.review_status, task_id, body.role_id, body.source_registry, body.expected_status,
+                 body.expected_status, body.review_status)).fetchone()
+            outcome["value"] = "updated" if row else "unchanged"
+            return before
+
+        change(caller, task_id, "tasks.suggestion:write", "role-suggested", apply,
+               extra={"role_id": body.role_id, "review_status": body.review_status})
+        return RoleSuggestionResult(outcome=outcome["value"])
+
+    @app.get("/v1/task-types", response_model=TaskTypeList, responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_task_types(caller: Caller, include_inactive: bool = False) -> TaskTypeList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                "SELECT id, legacy_id AS number, name, description, icon, color, default_status, allowed_statuses,"
+                " is_active, sort_order FROM tasks.task_types WHERE (%s OR is_active)"
+                " ORDER BY sort_order, name", (include_inactive,)).fetchall()
+        return TaskTypeList(items=[TaskType(**row) for row in rows])
 
     return app
 

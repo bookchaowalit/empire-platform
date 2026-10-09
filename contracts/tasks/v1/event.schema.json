@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:empire:contracts:tasks:event:v1",
   "title": "Tasks cell event envelope v1",
-  "description": "Rows of tasks.outbox as published to other cells (spec Domain Cells \u00a74).",
+  "description": "Rows of tasks.outbox as published to other cells (spec Domain Cells §4).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -35,6 +35,8 @@
         "tasks.task.unarchived",
         "tasks.task.deleted",
         "tasks.task.linked",
+        "tasks.task.assigned",
+        "tasks.task.role-suggested",
         "tasks.reminder.delivered"
       ]
     },

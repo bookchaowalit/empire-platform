@@ -21,7 +21,8 @@ EXCHANGED_TTL_SECONDS = 300
 # What each target accepts at most; a request narrower than this is honoured.
 AUDIENCE_SCOPES = {
     "tasks-api": ("tasks.task:read", "tasks.task:write", "tasks.status:write", "tasks.calendar:write",
-                  "tasks.link:write", "tasks.archive:write", "tasks.reminder:write", "tasks.occurrence:write"),
+                  "tasks.link:write", "tasks.archive:write", "tasks.reminder:write", "tasks.occurrence:write",
+                  "tasks.assignment:write", "tasks.suggestion:write"),
     "graph-api": ("graph.query:read",),
 }
 

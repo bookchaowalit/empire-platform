@@ -17,6 +17,149 @@
         "title": "Archive",
         "type": "object"
       },
+      "Assignment": {
+        "properties": {
+          "assignee_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Name"
+          },
+          "assignee_ref": {
+            "title": "Assignee Ref",
+            "type": "string"
+          },
+          "assignee_type": {
+            "enum": [
+              "identity",
+              "role",
+              "team"
+            ],
+            "title": "Assignee Type",
+            "type": "string"
+          },
+          "assignment_type": {
+            "enum": [
+              "assigned",
+              "cc",
+              "viewer"
+            ],
+            "title": "Assignment Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_number": {
+            "title": "Task Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "task_number",
+          "assignee_type",
+          "assignee_ref",
+          "assignee_name",
+          "assignment_type"
+        ],
+        "title": "Assignment",
+        "type": "object"
+      },
+      "AssignmentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Assignment"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AssignmentList",
+        "type": "object"
+      },
+      "AssignmentPut": {
+        "additionalProperties": false,
+        "properties": {
+          "assignee_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Name"
+          },
+          "assignee_ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Assignee Ref",
+            "type": "string"
+          },
+          "assignee_type": {
+            "enum": [
+              "identity",
+              "role",
+              "team"
+            ],
+            "title": "Assignee Type",
+            "type": "string"
+          },
+          "assignment_type": {
+            "default": "assigned",
+            "enum": [
+              "assigned",
+              "cc",
+              "viewer"
+            ],
+            "title": "Assignment Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assignee_type",
+          "assignee_ref"
+        ],
+        "title": "AssignmentPut",
+        "type": "object"
+      },
+      "AssignmentResult": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "created",
+              "unchanged"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "AssignmentResult",
+        "type": "object"
+      },
       "GenerateOccurrences": {
         "additionalProperties": false,
         "properties": {
@@ -97,6 +240,19 @@
       "LinkCreate": {
         "additionalProperties": false,
         "properties": {
+          "attributes": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replaces stored attributes when given",
+            "title": "Attributes"
+          },
           "relation": {
             "enum": [
               "supports-goal",
@@ -131,6 +287,82 @@
           "target_ref"
         ],
         "title": "LinkCreate",
+        "type": "object"
+      },
+      "LinkItem": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "relation": {
+            "enum": [
+              "supports-goal",
+              "belongs-to",
+              "related-to",
+              "depends-on",
+              "part-of"
+            ],
+            "title": "Relation",
+            "type": "string"
+          },
+          "target_ref": {
+            "title": "Target Ref",
+            "type": "string"
+          },
+          "target_type": {
+            "enum": [
+              "goal",
+              "project",
+              "context",
+              "skill",
+              "task"
+            ],
+            "title": "Target Type",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_number": {
+            "title": "Task Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "task_number",
+          "relation",
+          "target_type",
+          "target_ref",
+          "attributes"
+        ],
+        "title": "LinkItem",
+        "type": "object"
+      },
+      "LinkList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LinkItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LinkList",
         "type": "object"
       },
       "OccurrenceResult": {
@@ -214,6 +446,236 @@
           "outcome"
         ],
         "title": "ReminderResult",
+        "type": "object"
+      },
+      "RoleSuggestion": {
+        "properties": {
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "match_reason": {
+            "title": "Match Reason",
+            "type": "string"
+          },
+          "review_status": {
+            "enum": [
+              "suggested",
+              "accepted",
+              "dismissed"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "role_id": {
+            "title": "Role Id",
+            "type": "string"
+          },
+          "source_registry": {
+            "title": "Source Registry",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_number": {
+            "title": "Task Number",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "task_number",
+          "role_id",
+          "confidence",
+          "match_reason",
+          "review_status",
+          "source_registry",
+          "updated_at"
+        ],
+        "title": "RoleSuggestion",
+        "type": "object"
+      },
+      "RoleSuggestionList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RoleSuggestion"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RoleSuggestionList",
+        "type": "object"
+      },
+      "RoleSuggestionPut": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Confidence",
+            "type": "string"
+          },
+          "match_reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Match Reason",
+            "type": "string"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "suggested",
+                  "accepted",
+                  "dismissed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Status"
+          },
+          "role_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Role Id",
+            "type": "string"
+          },
+          "source_registry": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Source Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_id",
+          "source_registry",
+          "confidence",
+          "match_reason"
+        ],
+        "title": "RoleSuggestionPut",
+        "type": "object"
+      },
+      "RoleSuggestionResult": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "created",
+              "updated",
+              "unchanged"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "RoleSuggestionResult",
+        "type": "object"
+      },
+      "RoleSuggestionReview": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "suggested",
+                  "accepted",
+                  "dismissed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Status"
+          },
+          "review_status": {
+            "enum": [
+              "suggested",
+              "accepted",
+              "dismissed"
+            ],
+            "title": "Review Status",
+            "type": "string"
+          },
+          "role_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Role Id",
+            "type": "string"
+          },
+          "source_registry": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Source Registry",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_id",
+          "source_registry",
+          "review_status"
+        ],
+        "title": "RoleSuggestionReview",
+        "type": "object"
+      },
+      "StatGroup": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          }
+        },
+        "required": [
+          "key",
+          "count"
+        ],
+        "title": "StatGroup",
         "type": "object"
       },
       "Task": {
@@ -375,6 +837,17 @@
             "title": "Number",
             "type": "integer"
           },
+          "parent_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Number"
+          },
           "parent_recurring_id": {
             "anyOf": [
               {
@@ -386,6 +859,17 @@
               }
             ],
             "title": "Parent Recurring Id"
+          },
+          "parent_recurring_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Recurring Number"
           },
           "parent_task_id": {
             "anyOf": [
@@ -766,6 +1250,133 @@
         "title": "TaskList",
         "type": "object"
       },
+      "TaskStats": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/StatGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "groups"
+        ],
+        "title": "TaskStats",
+        "type": "object"
+      },
+      "TaskType": {
+        "properties": {
+          "allowed_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Statuses",
+            "type": "array"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "default_status": {
+            "title": "Default Status",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "name",
+          "description",
+          "icon",
+          "color",
+          "default_status",
+          "allowed_statuses",
+          "is_active",
+          "sort_order"
+        ],
+        "title": "TaskType",
+        "type": "object"
+      },
+      "TaskTypeList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskType"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "TaskTypeList",
+        "type": "object"
+      },
       "TaskUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -1096,11 +1707,700 @@
         "summary": "Health"
       }
     },
+    "/v1/task-assignments": {
+      "get": {
+        "operationId": "list_assignments_v1_task_assignments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "identity",
+                    "role",
+                    "team"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignee_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assignment_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "assigned",
+                    "cc",
+                    "viewer"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignment Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Assignments"
+      }
+    },
+    "/v1/task-links": {
+      "get": {
+        "operationId": "list_links_v1_task_links_get",
+        "parameters": [
+          {
+            "description": "Task number",
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Task number",
+              "title": "Task"
+            }
+          },
+          {
+            "in": "query",
+            "name": "relation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "supports-goal",
+                    "belongs-to",
+                    "related-to",
+                    "depends-on",
+                    "part-of"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Relation"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "goal",
+                    "project",
+                    "context",
+                    "skill",
+                    "task"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_ref",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Ref"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Links"
+      }
+    },
+    "/v1/task-role-suggestions": {
+      "get": {
+        "operationId": "list_role_suggestions_v1_task_role_suggestions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_registry",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 300,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Registry"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "suggested",
+                    "accepted",
+                    "dismissed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confidence",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "high",
+                    "medium",
+                    "low"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Confidence"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleSuggestionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Role Suggestions"
+      }
+    },
+    "/v1/task-types": {
+      "get": {
+        "operationId": "list_task_types_v1_task_types_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTypeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Types"
+      }
+    },
     "/v1/tasks": {
       "get": {
-        "description": "Filters cover what the SQLite-era writers selected; results are ordered by task number.",
+        "description": "Filters cover what the SQLite-era readers and writers selected; ordered by task number.",
         "operationId": "list_tasks_v1_tasks_get",
         "parameters": [
+          {
+            "description": "Cursor: return tasks numbered above this",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor: return tasks numbered above this",
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "status",
@@ -1145,6 +2445,87 @@
             }
           },
           {
+            "description": "Only tasks created locally",
+            "in": "query",
+            "name": "no_external_source",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only tasks created locally",
+              "title": "No External Source",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority_max",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 5,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Max"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due From"
+            }
+          },
+          {
             "in": "query",
             "name": "due_before",
             "required": false,
@@ -1159,6 +2540,74 @@
                 }
               ],
               "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
             }
           },
           {
@@ -1190,18 +2639,28 @@
           },
           {
             "in": "query",
-            "name": "include_archived",
+            "name": "numbers",
             "required": false,
             "schema": {
-              "default": false,
-              "title": "Include Archived",
-              "type": "boolean"
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Numbers"
             }
           },
           {
-            "description": "Cursor: return tasks numbered above this",
+            "description": "Children of this task number",
             "in": "query",
-            "name": "after",
+            "name": "parent",
             "required": false,
             "schema": {
               "anyOf": [
@@ -1213,20 +2672,37 @@
                   "type": "null"
                 }
               ],
-              "description": "Cursor: return tasks numbered above this",
-              "title": "After"
+              "description": "Children of this task number",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "Case-insensitive text in title or description",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text in title or description",
+              "title": "Q"
             }
           },
           {
             "in": "query",
-            "name": "limit",
+            "name": "include_archived",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
             }
           },
           {
@@ -1719,6 +3195,415 @@
         "summary": "Get By Number"
       }
     },
+    "/v1/tasks/stats": {
+      "get": {
+        "description": "Counts for dashboards without moving every task over the wire.",
+        "operationId": "task_stats_v1_tasks_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "status",
+                    "priority",
+                    "project",
+                    "category"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group By"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "todo",
+                      "in_progress",
+                      "done",
+                      "blocked",
+                      "cancelled"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "external_source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z][a-z0-9_.-]{0,63}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "External Source"
+            }
+          },
+          {
+            "description": "Only tasks created locally",
+            "in": "query",
+            "name": "no_external_source",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only tasks created locally",
+              "title": "No External Source",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority_max",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 5,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority Max"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reminder_due_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reminder Due Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "missing_calendar_event",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Missing Calendar Event",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "numbers",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "maxItems": 500,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Numbers"
+            }
+          },
+          {
+            "description": "Children of this task number",
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Children of this task number",
+              "title": "Parent"
+            }
+          },
+          {
+            "description": "Case-insensitive text in title or description",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive text in title or description",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Task Stats"
+      }
+    },
     "/v1/tasks/{task_id}": {
       "delete": {
         "operationId": "delete_task_v1_tasks__task_id__delete",
@@ -2179,6 +4064,119 @@
         "summary": "Archive Task"
       }
     },
+    "/v1/tasks/{task_id}/assignments": {
+      "put": {
+        "description": "Idempotent: assigning the same assignee twice changes nothing.",
+        "operationId": "assign_task_v1_tasks__task_id__assignments_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assign Task"
+      }
+    },
     "/v1/tasks/{task_id}/complete": {
       "post": {
         "operationId": "complete_task_v1_tasks__task_id__complete_post",
@@ -2617,6 +4615,230 @@
           }
         },
         "summary": "Reminder Delivered"
+      }
+    },
+    "/v1/tasks/{task_id}/role-suggestions": {
+      "patch": {
+        "description": "Change the review status; with expected_status it only moves from that status (compare-and-set).",
+        "operationId": "review_role_v1_tasks__task_id__role_suggestions_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleSuggestionReview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleSuggestionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Role"
+      },
+      "put": {
+        "description": "Upsert by (task, role, registry); a review decision already made is kept unless one is given.",
+        "operationId": "suggest_role_v1_tasks__task_id__role_suggestions_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleSuggestionPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleSuggestionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Suggest Role"
       }
     },
     "/v1/tasks/{task_id}/unarchive": {

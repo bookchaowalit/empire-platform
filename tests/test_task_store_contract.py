@@ -110,6 +110,81 @@ def scenario(store) -> dict:
     return out
 
 
+def read_scenario(store) -> dict:
+    """What the readers and relation writers do, through the store only."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    out: dict = {}
+    a = store.create({"title": "Report 100% done", "project": "alpha", "priority": 1,
+                      "due_date": (today - timedelta(days=1)).isoformat()})
+    b = store.create({"title": "Plan", "description": "Book Dev loop", "project": "alpha", "priority": 3,
+                      "due_date": (today + timedelta(days=3)).isoformat()})
+    c = store.create({"title": "Ops", "category": "ops", "priority": 2})
+    store.complete(c)
+    store.update(b, {"progress_percent": 40})
+    numbers = lambda rows: sorted(r["title"] for r in rows)  # noqa: E731
+    out["project"] = numbers(store.list(project="alpha"))
+    out["priority"] = numbers(store.list(priority_max=2))
+    out["due_window"] = numbers(store.list(due_from=today.isoformat(),
+                                           due_before=(today + timedelta(days=7)).isoformat()))
+    out["numbers"] = numbers(store.list(numbers=[a, c]))
+    out["search"] = numbers(store.list(q="book dev")) + numbers(store.list(q="100%")) + numbers(store.list(q="_"))
+    out["completed_today"] = numbers(store.list(status=["done"], completed_between=(today.isoformat(), today.isoformat())))
+    out["created_today"] = len(store.list(created_between=(today.isoformat(), today.isoformat()))) >= 3
+    out["progress"] = store.get(b)["progress_percent"]
+    out["stats"] = store.stats(group_by="status", numbers=[a, b, c])
+    out["stats_project"] = store.stats(group_by="project", project="alpha")
+
+    out["link"] = [store.link(a, "goal", 7, {"link_type": "primary", "source": "seed"}),
+                   store.link(a, "goal", 7, {"link_type": "supporting"}),
+                   store.link(a, "goal", 7, {"link_type": "supporting", "source": "seed"}, update=True),
+                   store.link(b, "project", 3, {"relation_type": "delivery", "weight": 1.0, "source": "seed"}),
+                   store.link(b, "skill", 11, {"link_type": "suggested", "match_reason": "plan",
+                                               "source_registry": "docs/ROLE-LEARNING.yaml"})]
+    strip = lambda rows: [(r["task"] == a, r["target_type"], r["target_id"], r["relation"],  # noqa: E731
+                           sorted(r["attributes"].items())) for r in rows]
+    out["links_goal"] = strip(store.links(target_type="goal", target_id=7))
+    out["links_task_b"] = strip(store.links(task=b))
+
+    out["assign"] = [store.assign(b, "role", "role.engineer", "Engineer"), store.assign(b, "role", "role.engineer"),
+                     store.assign(b, "user", "owner", "Owner")]
+    out["assignments"] = [(r["task"] == b, r["assignee_type"], r["assignee_id"], r["assignment_type"])
+                          for r in store.assignments(assignee_type="role")]
+    out["assignments_b"] = sorted((r["assignee_type"], r["assignee_id"]) for r in store.assignments(task=b))
+
+    registry = "docs/ROLE-TASK-ROUTING.yaml"
+    out["suggest"] = [store.suggest_role(a, "role.writer", registry, "high", "report"),
+                      store.suggest_role(a, "role.writer", registry, "high", "report"),
+                      store.review_role(a, "role.writer", registry, "accepted", expected_status="suggested"),
+                      store.review_role(a, "role.writer", registry, "accepted", expected_status="suggested"),
+                      store.suggest_role(a, "role.writer", registry, "medium", "report and plan")]
+    out["suggestions"] = [(r["task"] == a, r["role_id"], r["confidence"], r["review_status"])
+                          for r in store.role_suggestions(source_registry=registry)]
+    return out
+
+
+def test_read_and_relation_methods_agree(task_store, api_url, cluster, tmp_path):
+    db = sqlite3.connect(tmp_path / "legacy-read.db", isolation_level=None)
+    db.executescript(SCHEMA.read_text(encoding="utf-8"))
+    legacy = read_scenario(task_store.SqliteTaskStore(db))
+
+    url, private_pem = api_url
+    with cluster.connect("platform_api") as conn:
+        ws = create_workspace(conn, f"store-read-{uuid.uuid4().hex[:8]}", list(TASKS_OWNER))
+        conn.commit()
+    api = read_scenario(task_store.ApiTaskStore(url, mint(private_pem, sub=ws.owner, ws=ws.id, issuer=ISSUER)))
+
+    assert legacy["search"] == ["Plan", "Report 100% done"]
+    assert legacy["stats"] == {"total": 3, "groups": {"todo": 2, "done": 1}}
+    assert legacy["link"] == ["created", "unchanged", "updated", "created", "created"]
+    assert legacy["assign"] == ["created", "unchanged", "created"]
+    assert legacy["suggest"] == ["created", "unchanged", True, False, "updated"]
+    assert legacy["suggestions"] == [(True, "role.writer", "medium", "accepted")]
+    for key in legacy:
+        assert api[key] == legacy[key], key
+
+
 def test_sqlite_and_api_backends_agree(task_store, api_url, cluster, tmp_path):
     db = sqlite3.connect(tmp_path / "legacy.db", isolation_level=None)
     db.executescript(SCHEMA.read_text(encoding="utf-8"))

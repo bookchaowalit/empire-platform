@@ -30,6 +30,8 @@ OPERATIONS = {
     "archive": "tasks.archive:write",
     "reminder_delivered": "tasks.reminder:write",
     "generate_occurrences": "tasks.occurrence:write",
+    "assign": "tasks.assignment:write",
+    "suggest_role": "tasks.suggestion:write",
     "delete": "tasks.task:delete",
 }
 
@@ -74,6 +76,11 @@ def attempt(client, headers, operation, task) -> int:
                                                   json={"reminder_at": "2026-10-10T09:00:00+00:00", "channel": "line"}),
         "generate_occurrences": lambda: client.post(f"{path}/occurrences/generate", json={"until": "2026-10-15"},
                                                     headers=headers),
+        "assign": lambda: client.put(f"{path}/assignments", headers=headers,
+                                     json={"assignee_type": "role", "assignee_ref": f"role.{uuid.uuid4().hex[:6]}"}),
+        "suggest_role": lambda: client.put(f"{path}/role-suggestions", headers=headers,
+                                           json={"role_id": f"role.{uuid.uuid4().hex[:6]}", "source_registry": "probe",
+                                                 "confidence": "low", "match_reason": "probe"}),
         "delete": lambda: client.delete(path, headers=headers),
     }
     return calls[operation]().status_code

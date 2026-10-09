@@ -1,0 +1,159 @@
+"""Read filters, stats, links, assignments, role suggestions, and task types.
+
+These are what the SQLite-era readers used; each must respect the caller's
+workspace and the narrow write permissions.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+
+from conftest import add_member, create_workspace, delegate
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
+from tasks_api.app import create_app
+from tasks_api.auth import TokenVerifier
+
+ISSUER = "empire-relations-test"
+GOAL = "empire:goals:goal:legacy-7"
+
+
+@pytest.fixture(scope="module")
+def setup(cluster, tmp_path_factory):
+    private_pem, public_pem = key_pair(tmp_path_factory.mktemp("rel-keys"))
+    client = TestClient(create_app(lambda: cluster.connect("tasks_api"), TokenVerifier(public_pem, ISSUER)))
+    with cluster.connect("platform_api") as conn:
+        suffix = uuid.uuid4().hex[:8]
+        ws = create_workspace(conn, f"rel-{suffix}", list(TASKS_OWNER))
+        bot = add_member(conn, ws, "router", "automation")
+        reader = delegate(conn, ws, ws.owner, bot, ["tasks.task:read"])
+        router = delegate(conn, ws, ws.owner, bot, ["tasks.task:read", "tasks.assignment:write",
+                                                    "tasks.suggestion:write", "tasks.link:write"])
+        other = create_workspace(conn, f"rel-other-{suffix}", list(TASKS_OWNER))
+        conn.commit()
+
+    def headers(sub=None, workspace=None, delegation=None):
+        return {"Authorization": "Bearer " + mint(private_pem, sub=sub or ws.owner, ws=workspace or ws.id,
+                                                  delegation=delegation, obo=ws.owner if delegation else None,
+                                                  issuer=ISSUER)}
+
+    owner = headers()
+    today = date.today()
+    made = {}
+    for key, body in {
+        "a": {"title": "Write 100% report", "project": "alpha", "priority": 1, "due_date": str(today - timedelta(days=2))},
+        "b": {"title": "Review", "description": "book dev loop", "project": "alpha", "priority": 3,
+              "due_date": str(today + timedelta(days=3))},
+        "c": {"title": "Other", "project": "beta", "category": "ops", "priority": 2},
+    }.items():
+        made[key] = client.post("/v1/tasks", json=body, headers=owner).json()
+    child = client.post("/v1/tasks", json={"title": "Child", "parent_task_id": made["a"]["id"]}, headers=owner).json()
+    made["child"] = child
+    client.post(f"/v1/tasks/{made['c']['id']}/complete", headers=owner)
+    return client, headers, owner, made, {"bot": bot, "reader": reader, "router": router, "other": other}
+
+
+def numbers(response):
+    assert response.status_code == 200, response.text
+    return sorted(t["number"] for t in response.json()["items"])
+
+
+def test_filters_match_the_legacy_queries(setup):
+    client, _, owner, made, _ = setup
+    a, b, c, child = (made[k]["number"] for k in ("a", "b", "c", "child"))
+    today = date.today()
+    get = lambda **params: numbers(client.get("/v1/tasks", params=params, headers=owner))  # noqa: E731
+    assert get(project="alpha") == [a, b]
+    assert get(priority_max=2) == [a, c]
+    assert get(due_from=str(today), due_before=str(today + timedelta(days=7))) == [b]
+    assert get(numbers=[a, c, 999999]) == [a, c]
+    assert get(parent=a) == [child]
+    assert get(q="book DEV") == [b]
+    assert get(q="100%") == [a]  # wildcards in the query are literal
+    assert get(q="_") == []
+    assert get(status=["done"], category="ops") == [c]
+    assert get(no_external_source=True, numbers=[a]) == [a]
+    assert client.get(f"/v1/tasks/{made['child']['id']}", headers=owner).json()["parent_number"] == a
+
+
+def test_stats_count_and_group(setup):
+    client, _, owner, made, _ = setup
+    stats = client.get("/v1/tasks/stats", params={"group_by": "project", "project": "alpha"}, headers=owner).json()
+    assert stats["total"] == 2 and stats["groups"] == [{"key": "alpha", "count": 2}]
+    by_status = client.get("/v1/tasks/stats", params={"group_by": "status"}, headers=owner).json()
+    assert {g["key"]: g["count"] for g in by_status["groups"]} == {"todo": 3, "done": 1}
+    assert client.get("/v1/tasks/stats", params={"group_by": "title"}, headers=owner).status_code == 422
+
+
+def test_links_list_by_task_and_target_and_keep_attributes(setup):
+    client, _, owner, made, _ = setup
+    task = made["a"]
+    link = {"relation": "supports-goal", "target_type": "goal", "target_ref": GOAL}
+    client.post(f"/v1/tasks/{task['id']}/links", json={**link, "attributes": {"link_type": "primary"}}, headers=owner)
+    client.post(f"/v1/tasks/{task['id']}/links", json=link, headers=owner)  # no attributes: keep stored ones
+    items = client.get("/v1/task-links", params={"target_ref": GOAL}, headers=owner).json()["items"]
+    assert [(i["task_number"], i["attributes"]) for i in items] == [(task["number"], {"link_type": "primary"})]
+    assert client.get("/v1/task-links", params={"task": made["b"]["number"]}, headers=owner).json()["items"] == []
+    client.post(f"/v1/tasks/{task['id']}/links", json={**link, "attributes": {"link_type": "support"}}, headers=owner)
+    items = client.get("/v1/task-links", params={"task": task["number"]}, headers=owner).json()["items"]
+    assert items[0]["attributes"] == {"link_type": "support"}
+
+
+def test_assignments_are_idempotent_and_need_their_permission(setup):
+    client, headers, owner, made, ids = setup
+    task = made["b"]
+    body = {"assignee_type": "role", "assignee_ref": "role.engineer", "assignee_name": "Engineer"}
+    router = headers(sub=ids["bot"], delegation=ids["router"])
+    reader = headers(sub=ids["bot"], delegation=ids["reader"])
+    assert client.put(f"/v1/tasks/{task['id']}/assignments", json=body, headers=reader).status_code == 403
+    first = client.put(f"/v1/tasks/{task['id']}/assignments", json=body, headers=router).json()
+    second = client.put(f"/v1/tasks/{task['id']}/assignments", json=body, headers=router).json()
+    assert (first["outcome"], second["outcome"]) == ("created", "unchanged")
+    items = client.get("/v1/task-assignments", params={"assignee_type": "role"}, headers=reader).json()["items"]
+    assert [(i["task_number"], i["assignee_ref"]) for i in items] == [(task["number"], "role.engineer")]
+    # The router cannot change the task itself.
+    assert client.patch(f"/v1/tasks/{task['id']}", json={"title": "x"}, headers=router).status_code == 403
+
+
+def test_role_suggestions_upsert_review_and_compare_and_set(setup):
+    client, headers, owner, made, ids = setup
+    task = made["a"]
+    router = headers(sub=ids["bot"], delegation=ids["router"])
+    suggestion = {"role_id": "role.writer", "source_registry": "docs/ROLE-TASK-ROUTING.yaml",
+                  "confidence": "high", "match_reason": "title mentions report"}
+    put = lambda body: client.put(f"/v1/tasks/{task['id']}/role-suggestions", json=body, headers=router).json()  # noqa: E731
+    assert put(suggestion)["outcome"] == "created"
+    assert put(suggestion)["outcome"] == "unchanged"
+    review = {"role_id": "role.writer", "source_registry": suggestion["source_registry"],
+              "review_status": "accepted", "expected_status": "suggested"}
+    patch = lambda body: client.patch(f"/v1/tasks/{task['id']}/role-suggestions", json=body, headers=router).json()  # noqa: E731
+    assert patch(review)["outcome"] == "updated"
+    assert patch(review)["outcome"] == "unchanged"  # no longer 'suggested'
+    # A later resync with new evidence keeps the accepted decision.
+    assert put({**suggestion, "match_reason": "also in project"})["outcome"] == "updated"
+    items = client.get("/v1/task-role-suggestions", params={"review_status": "accepted"}, headers=owner).json()["items"]
+    assert [(i["task_number"], i["role_id"], i["match_reason"]) for i in items] == [
+        (task["number"], "role.writer", "also in project")]
+
+
+def test_task_types_and_other_workspaces_see_nothing(setup, cluster):
+    client, headers, owner, made, ids = setup
+    assert client.get("/v1/task-types", headers=owner).status_code == 200
+    outsider = headers(sub=ids["other"].owner, workspace=ids["other"].id)
+    for path, params in [("/v1/tasks", {}), ("/v1/task-links", {}), ("/v1/task-assignments", {}),
+                         ("/v1/task-role-suggestions", {}), ("/v1/task-types", {})]:
+        assert client.get(path, params=params, headers=outsider).json()["items"] == [], path
+    assert client.get("/v1/tasks/stats", headers=outsider).json()["total"] == 0
+
+
+def test_relation_writes_publish_events(setup, cluster):
+    _, _, _, made, _ = setup
+    with cluster.connect("postgres") as conn:
+        types = {row[0] for row in conn.execute(
+            "SELECT type FROM tasks.outbox WHERE subject = ANY(%s)",
+            ([f"empire:tasks:task:{made[k]['id']}" for k in ("a", "b")],))}
+    assert {"tasks.task.linked", "tasks.task.assigned", "tasks.task.role-suggested"} <= types
