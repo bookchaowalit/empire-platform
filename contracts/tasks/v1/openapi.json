@@ -3031,7 +3031,7 @@
         "summary": "Get External"
       },
       "put": {
-        "description": "Create or update the one task for an external record; retries never duplicate it.",
+        "description": "Create or update the one task for an external record; retries never duplicate it.\n\nWith If-Match (the version the caller last read), an existing task that was\nchanged since is not overwritten: 412, so a sync never clobbers a local edit.",
         "operationId": "upsert_external_v1_tasks_external__source___external_id__put",
         "parameters": [
           {
@@ -3053,6 +3053,22 @@
               "minLength": 1,
               "title": "External Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "if-match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           },
           {

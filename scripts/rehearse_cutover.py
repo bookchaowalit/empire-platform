@@ -19,9 +19,11 @@ never task titles or other content.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -128,6 +130,24 @@ def main() -> int:
         private_pem, public_pem = key_pair(root / "keys")
         app = create_app(lambda: cluster.connect("tasks_api"), TokenVerifier(public_pem, ISSUER))
         url, server, thread = serve(app)
+
+        # task-sync keeps its sync state in its own ledger on the api backend; seed it
+        # from the SQLite columns, as the runbook's cutover step does.
+        go = shutil.which("go") or str(Path.home() / ".local" / "go" / "bin" / "go")
+        task_sync = Path(ts.__file__).resolve().parents[2] / "go" / "task-sync"
+        if Path(go).exists() and task_sync.is_dir():
+            sync_identity = automations["task-sync"]
+            env = {**os.environ, "SOLO_EMPIRE_TASKS_BACKEND": "api", "EMPIRE_TASKS_API": url,
+                   "SOLO_EMPIRE_DB_PATH": str(copy),
+                   "EMPIRE_AUTOMATION_TOKEN_TASK_SYNC": mint(
+                       private_pem, sub=sync_identity.identity, ws=workspace, delegation=sync_identity.delegation,
+                       obo=sync_identity.owner, issuer=ISSUER)}
+            seeded = subprocess.run([go, "run", ".", "seed-ledger"], cwd=task_sync, env=env, capture_output=True,
+                                    text=True, timeout=600)
+            report["task_sync_ledger"] = seeded.stdout.strip()[-200:] if seeded.returncode == 0 else "failed"
+            checks["task_sync_ledger_seeded"] = seeded.returncode == 0 and "seeded:" in seeded.stdout
+        else:
+            report["task_sync_ledger"] = "skipped: no Go toolchain"
 
         def store(name: str) -> object:
             p = automations[name]

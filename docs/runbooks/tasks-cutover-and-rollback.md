@@ -15,6 +15,7 @@ switch is off while SQLite accepts writes again.
 | 1. Back up both sides | copy `infra/database/solo-empire.db`; `cutover.backup()` (pg_dump) | `test_restore_from_backup_recovers_schema_and_data` |
 | 2. Freeze SQLite tasks writers | `cutover.freeze_sqlite()` installs refusing triggers on the tasks tables | `test_frozen_sqlite_refuses_writers_until_rollback` |
 | 3. Final import | `empire-tasks-import --apply` (verifies counts, references, and every field; commits only if all pass) | `tests/test_tasks_import.py` |
+| 3b. Seed the task-sync ledger | `SOLO_EMPIRE_TASKS_BACKEND=api task-sync seed-ledger` copies each task's SQLite sync state (local, synced, dirty, conflict, hash) into `task_sync_ledger`, so the first push after cutover sends what SQLite would have sent; refuses to run twice | `scripts/rehearse_cutover.py` (88 of 88 on current data) |
 | 4. Writers switch to the API | `SOLO_EMPIRE_TASKS_BACKEND=api` plus one token per automation (`empire-automations provision --workspace owner --tokens DIR`) | `scripts/rehearse_cutover.py` on a copy of current data; Go and TypeScript writers still pending |
 | 5. API writes on | `cutover.set_writes(True)` | `test_write_switch_stops_api_writes_but_not_reads` |
 

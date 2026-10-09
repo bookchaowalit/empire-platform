@@ -229,3 +229,20 @@ def test_external_identity_is_set_once(setup):
     assert put(other, ref).status_code == 409  # identity used by another task
     found = client.get(f"/v1/tasks/external/todoist/{ref}", headers=owner).json()
     assert found["id"] == first["id"]
+
+
+def test_upsert_with_if_match_never_clobbers_a_newer_edit(setup):
+    client, _, owner, _, _ = setup
+    key = f"/v1/tasks/external/probe/{uuid.uuid4().hex[:8]}"
+    task = client.put(key, json={"title": "Remote v1"}, headers=owner).json()["task"]
+    seen = task["version"]
+    client.patch(f"/v1/tasks/{task['id']}", json={"title": "Edited locally"}, headers=owner)
+    stale = client.put(key, json={"title": "Remote v2"}, headers={**owner, "If-Match": str(seen)})
+    assert stale.status_code == 412
+    current = client.get(f"/v1/tasks/{task['id']}", headers=owner).json()
+    assert current["title"] == "Edited locally"
+    fresh = client.put(key, json={"title": "Remote v2"}, headers={**owner, "If-Match": str(current["version"])})
+    assert fresh.status_code == 200 and fresh.json()["task"]["title"] == "Remote v2"
+    missing = f"/v1/tasks/external/probe/{uuid.uuid4().hex[:8]}"
+    assert client.put(missing, json={"title": "x"}, headers={**owner, "If-Match": "1"}).status_code == 412
+    assert client.get(missing.replace("/v1/tasks/external", "/v1/tasks/external"), headers=owner).status_code == 404

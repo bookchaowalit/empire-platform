@@ -791,8 +791,13 @@ def create_app(
              responses={401: {"model": Problem}, 403: {"model": Problem}, 422: {"model": Problem}})
     def upsert_external(caller: Caller, source: Annotated[str, Path_(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")],
                         external_id: Annotated[str, Path_(min_length=1, max_length=200)],
-                        body: TaskCreate, response: Response) -> UpsertResult:
-        """Create or update the one task for an external record; retries never duplicate it."""
+                        body: TaskCreate, response: Response,
+                        if_match: Annotated[str | None, Header()] = None) -> UpsertResult:
+        """Create or update the one task for an external record; retries never duplicate it.
+
+        With If-Match (the version the caller last read), an existing task that was
+        changed since is not overwritten: 412, so a sync never clobbers a local edit.
+        """
         request = request_for(caller, "tasks.task:write", f"external:{source}:{external_id}")
         precheck(caller, request, not_found=False)
         given = body.model_dump(exclude_unset=True)
@@ -811,6 +816,8 @@ def create_app(
                 [values[c] for c in columns],
             ).fetchone()
             if row is not None:
+                if if_match is not None:  # the caller expected an existing task
+                    raise HTTPException(status_code=412, detail={"error": "version_mismatch"})
                 emit(conn, caller, execution, "created", row["id"], None, row)
                 response.status_code = 201
                 return UpsertResult(outcome="created", task=to_task(row))
@@ -819,6 +826,8 @@ def create_app(
                 " WHERE external_source = %s AND external_id = %s FOR UPDATE",
                 (source, external_id),
             ).fetchone()
+            if if_match is not None and str(before["version"]) != if_match.strip('"'):
+                raise HTTPException(status_code=412, detail={"error": "version_mismatch"})
             changes = {k: v for k, v in given.items() if before.get(k) != v}
             if not changes:
                 return UpsertResult(outcome="unchanged", task=to_task(before))
