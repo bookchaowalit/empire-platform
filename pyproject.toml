@@ -19,13 +19,15 @@ empire-tasks-import = "empire_platform.tasks_import:main"
 empire-dev-token = "empire_platform.devtoken:main"
 tasks-api = "tasks_api.app:main"
 empire-contracts = "empire_platform.contracts:main"
+empire-mcp = "empire_mcp.server:main"
+empire-publish = "tasks_api.publisher:main"
 
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src", "packages/authz", "services/tasks"]
+where = ["src", "packages/authz", "services/tasks", "services/graph", "services/mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

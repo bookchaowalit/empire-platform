@@ -8,10 +8,11 @@ repository:
 - Domain Cells + Empire Graph: `docs/superpowers/specs/2026-10-09-domain-cells-empire-graph-design.md`
 - Phase 1 plan: `docs/superpowers/plans/2026-10-09-platform-foundation-phase-1.md`
 
-Status: phase 1, items P1.1–P1.5 on local PostgreSQL only: platform schema,
-shared authorization (P1.3), tasks schema and import dry run (P1.4), and the
-Tasks API (P1.5). No hosted database, deployment, or production data is
-involved, and SQLite writers have not been switched.
+Status: phase 1 on local PostgreSQL only: platform schema, shared
+authorization, tasks schema and import, the Tasks API with writer parity, the
+transactional outbox and publisher, a minimal Empire Graph, the MCP adapter,
+and a rehearsed cutover/rollback. No hosted database, deployment, or
+production data is involved, and SQLite writers have not been switched.
 
 ## Local development
 
@@ -44,7 +45,11 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 | `services/tasks/migrations/` | `tasks` schema with forced RLS, URN links, and the transactional outbox |
 | `services/tasks/tasks_api/` | Tasks API (`tasks.v1`); contract in `contracts/tasks/v1/` |
 | `src/empire_platform/tasks_import.py` | read-only SQLite snapshot import with full verification; dry run by default |
-| `tests/` | isolation, RLS bypass attempts, delegation limits, authorization conformance and TOCTOU, import, API, and contract tests |
+| `services/tasks/tasks_api/publisher.py` | outbox publisher (`tasks_publisher` role): oldest first, retry with backoff, at least once |
+| `services/graph/` | graph schema (nodes, aliases, edges, relation types, consents, inbox), event consumer, and the read API |
+| `services/mcp/empire_mcp/` | MCP tools `tasks.*` and `graph.*` that call the APIs with the caller's token and reject unknown arguments |
+| `src/empire_platform/cutover.py`, `docs/runbooks/` | backup/restore, write switch, SQLite freeze, lossless export back to SQLite |
+| `tests/` | isolation, RLS bypass, delegation, authorization conformance and TOCTOU, import, API, contract, writer parity, graph, MCP, and cutover/rollback tests |
 
 ## Security model
 

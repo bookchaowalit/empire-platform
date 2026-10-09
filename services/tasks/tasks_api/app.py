@@ -289,6 +289,9 @@ def create_app(
     def acting(caller: Principal, request: Request, idempotency_key: str | None) -> Iterator[tuple[psycopg.Connection, uuid.UUID]]:
         """Execution + locked re-check + the write, all in one transaction."""
         with bound(caller) as conn:
+            # Locks the switch row: switching writes off waits for writes already under way.
+            if not conn.execute("SELECT tasks.writes_enabled() AS on").fetchone()["on"]:
+                raise HTTPException(status_code=503, detail={"error": "writes_disabled"})
             try:
                 # The execution trigger refuses acting for someone without a live delegation.
                 execution = conn.execute(

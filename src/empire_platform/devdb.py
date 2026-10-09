@@ -26,6 +26,7 @@ BOOTSTRAP = REPO_ROOT / "db" / "bootstrap" / "roles.sql"
 MIGRATION_DIRS = [
     REPO_ROOT / "services" / "platform" / "migrations",
     REPO_ROOT / "services" / "tasks" / "migrations",
+    REPO_ROOT / "services" / "graph" / "migrations",
 ]
 DATABASE = "empire"
 SUPERUSER = "postgres"
@@ -100,7 +101,7 @@ def bootstrap(cluster: Cluster) -> None:
             conn.execute(f"CREATE DATABASE {DATABASE} OWNER empire_migrator")
     with cluster.connect(SUPERUSER, DATABASE, autocommit=True) as conn:
         conn.execute(f"REVOKE ALL ON DATABASE {DATABASE} FROM PUBLIC")
-        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api")
+        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api")
         conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
 
@@ -112,10 +113,10 @@ def migration_files() -> list[Path]:
     return files
 
 
-def migrate(cluster: Cluster) -> list[str]:
+def migrate(cluster: Cluster, dbname: str = DATABASE) -> list[str]:
     """Apply pending migrations as empire_migrator; refuse edited ones."""
     applied: list[str] = []
-    with cluster.connect("empire_migrator") as conn:
+    with cluster.connect("empire_migrator", dbname) as conn:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS public.schema_migrations ("
             " name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())"

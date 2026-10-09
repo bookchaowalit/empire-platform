@@ -39,6 +39,7 @@ class Principal:
 class TokenVerifier:
     public_key_pem: str
     issuer: str
+    audience: str = AUDIENCE
 
     def verify(self, authorization: str | None, channel: str | None) -> Principal:
         if not authorization or not authorization.startswith("Bearer "):
@@ -48,7 +49,7 @@ class TokenVerifier:
                 authorization.removeprefix("Bearer "),
                 self.public_key_pem,
                 algorithms=["RS256"],
-                audience=AUDIENCE,
+                audience=self.audience,
                 issuer=self.issuer,
                 options={"require": ["exp", "iat", "sub", "jti"]},
             )

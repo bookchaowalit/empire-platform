@@ -7,6 +7,8 @@
 --                  BYPASSRLS, owns nothing, and cannot assume empire_migrator.
 -- tasks_api        the tasks cell at runtime: same limits, its own schema only,
 --                  and only the platform authorization functions.
+-- tasks_publisher  reads and marks the tasks outbox across workspaces; nothing else.
+-- graph_api        the graph service: its own schema and platform.can only.
 
 DO $$
 BEGIN
@@ -18,6 +20,12 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tasks_api') THEN
         CREATE ROLE tasks_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tasks_publisher') THEN
+        CREATE ROLE tasks_publisher LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'graph_api') THEN
+        CREATE ROLE graph_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
     END IF;
 END
 $$;

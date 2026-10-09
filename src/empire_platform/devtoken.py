@@ -39,9 +39,10 @@ def key_pair(directory: Path = KEY_DIR) -> tuple[str, str]:
 
 def mint(private_pem: str, *, sub: uuid.UUID, ws: uuid.UUID, delegation: uuid.UUID | None = None,
          obo: uuid.UUID | None = None, act: uuid.UUID | None = None, ttl: int = 600,
-         issuer: str = ISSUER, audience: str = "tasks-api") -> str:
+         issuer: str = ISSUER, audience: str | list[str] = ("tasks-api", "graph-api")) -> str:
     now = int(time.time())
-    claims: dict = {"iss": issuer, "aud": audience, "sub": str(sub), "ws": str(ws), "iat": now,
+    aud = audience if isinstance(audience, str) else list(audience)
+    claims: dict = {"iss": issuer, "aud": aud, "sub": str(sub), "ws": str(ws), "iat": now,
                     "exp": now + ttl, "jti": str(uuid.uuid4())}
     if delegation:
         claims["del"] = str(delegation)
