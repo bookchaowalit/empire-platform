@@ -202,7 +202,6 @@
     {
       "id": "portfolio-reader",
       "readers": [
-        "infra/scripts/utils/portfolio_progress.py",
         "infra/scripts/workflows/update_goal_progress.py",
         "infra/scripts/utils/season_quest.py",
         "infra/scripts/utils/entity_graph_sync.py",
@@ -239,6 +238,17 @@
       "does": "serves task lists and counts to the local dashboard and the legacy MCP stats tools",
       "scopes": [
         "tasks.task:read"
+      ]
+    },
+    {
+      "id": "progress-rollup",
+      "writers": [
+        "infra/scripts/utils/portfolio_progress.py"
+      ],
+      "does": "rolls subtask progress up into each task's progress_percent and reads goal and project links for the progress report",
+      "scopes": [
+        "tasks.task:read",
+        "tasks.status:write"
       ]
     }
   ],

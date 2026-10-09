@@ -448,6 +448,23 @@
         "title": "ReminderResult",
         "type": "object"
       },
+      "RemovalResult": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "removed",
+              "absent"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "RemovalResult",
+        "type": "object"
+      },
       "RoleSuggestion": {
         "properties": {
           "confidence": {
@@ -4280,6 +4297,133 @@
       }
     },
     "/v1/tasks/{task_id}/links": {
+      "delete": {
+        "description": "Withdraw a link; the graph retracts the edge and keeps its history.",
+        "operationId": "unlink_task_v1_tasks__task_id__links_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "relation",
+            "required": true,
+            "schema": {
+              "enum": [
+                "supports-goal",
+                "belongs-to",
+                "related-to",
+                "depends-on",
+                "part-of"
+              ],
+              "title": "Relation",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_ref",
+            "required": true,
+            "schema": {
+              "pattern": "^empire:[a-z0-9-]+:[a-z0-9-]+:[A-Za-z0-9:._-]+$",
+              "title": "Target Ref",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unlink Task"
+      },
       "post": {
         "operationId": "link_task_v1_tasks__task_id__links_post",
         "parameters": [
@@ -4618,6 +4762,150 @@
       }
     },
     "/v1/tasks/{task_id}/role-suggestions": {
+      "delete": {
+        "description": "Withdraw a generated suggestion; with only_status a reviewed one is never removed.",
+        "operationId": "withdraw_role_v1_tasks__task_id__role_suggestions_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role_id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Role Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_registry",
+            "required": true,
+            "schema": {
+              "maxLength": 300,
+              "minLength": 1,
+              "title": "Source Registry",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "only_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "suggested",
+                    "accepted",
+                    "dismissed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Only Status"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Role"
+      },
       "patch": {
         "description": "Change the review status; with expected_status it only moves from that status (compare-and-set).",
         "operationId": "review_role_v1_tasks__task_id__role_suggestions_patch",

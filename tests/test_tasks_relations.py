@@ -157,3 +157,47 @@ def test_relation_writes_publish_events(setup, cluster):
             "SELECT type FROM tasks.outbox WHERE subject = ANY(%s)",
             ([f"empire:tasks:task:{made[k]['id']}" for k in ("a", "b")],))}
     assert {"tasks.task.linked", "tasks.task.assigned", "tasks.task.role-suggested"} <= types
+
+
+def test_withdrawals_remove_only_what_is_asked(setup):
+    client, headers, owner, made, ids = setup
+    task = made["b"]
+    router = headers(sub=ids["bot"], delegation=ids["router"])
+    link = {"relation": "related-to", "target_type": "skill", "target_ref": "empire:roles-skills:skill:legacy-11"}
+    client.post(f"/v1/tasks/{task['id']}/links", json=link, headers=router)
+    params = {"relation": link["relation"], "target_ref": link["target_ref"]}
+    assert client.delete(f"/v1/tasks/{task['id']}/links", params=params, headers=router).json()["outcome"] == "removed"
+    assert client.delete(f"/v1/tasks/{task['id']}/links", params=params, headers=router).json()["outcome"] == "absent"
+    registry = "docs/ROLE-TASK-ROUTING.yaml"
+    for role in ("role.a", "role.b"):
+        client.put(f"/v1/tasks/{task['id']}/role-suggestions", headers=router,
+                   json={"role_id": role, "source_registry": registry, "confidence": "low", "match_reason": "x"})
+    client.patch(f"/v1/tasks/{task['id']}/role-suggestions", headers=router,
+                 json={"role_id": "role.b", "source_registry": registry, "review_status": "accepted"})
+    withdraw = lambda role: client.delete(  # noqa: E731
+        f"/v1/tasks/{task['id']}/role-suggestions", headers=router,
+        params={"role_id": role, "source_registry": registry, "only_status": "suggested"}).json()["outcome"]
+    assert (withdraw("role.a"), withdraw("role.b")) == ("removed", "absent")  # the accepted one stays
+    left = client.get("/v1/task-role-suggestions", params={"task": task["number"], "source_registry": registry},
+                      headers=owner).json()["items"]
+    assert [i["role_id"] for i in left] == ["role.b"]
+    reader = headers(sub=ids["bot"], delegation=ids["reader"])
+    assert client.delete(f"/v1/tasks/{task['id']}/links", params=params, headers=reader).status_code == 403
+
+
+def test_unlink_retracts_the_graph_edge(setup, cluster):
+    from graph_world import run_publisher
+
+    client, _, owner, made, _ = setup
+    task = made["c"]
+    link = {"relation": "supports-goal", "target_type": "goal", "target_ref": "empire:goals:goal:legacy-9"}
+    client.post(f"/v1/tasks/{task['id']}/links", json=link, headers=owner)
+    run_publisher(cluster)
+    client.delete(f"/v1/tasks/{task['id']}/links", params={"relation": link["relation"],
+                                                           "target_ref": link["target_ref"]}, headers=owner)
+    run_publisher(cluster)
+    with cluster.connect("postgres") as conn:
+        retracted = conn.execute(
+            "SELECT retracted_at IS NOT NULL FROM graph.edges WHERE from_urn = %s AND to_urn = %s",
+            (task["urn"], link["target_ref"])).fetchall()
+    assert retracted == [(True,)]

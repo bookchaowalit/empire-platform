@@ -274,6 +274,10 @@ class RoleSuggestionResult(BaseModel):
     outcome: Literal["created", "updated", "unchanged"]
 
 
+class RemovalResult(BaseModel):
+    outcome: Literal["removed", "absent"]
+
+
 class TaskType(BaseModel):
     id: uuid.UUID
     number: int | None
@@ -914,6 +918,24 @@ def create_app(
             ).fetchall()
         return LinkList(items=[LinkItem(**row) for row in rows])
 
+    @app.delete("/v1/tasks/{task_id}/links", response_model=RemovalResult,
+                responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def unlink_task(caller: Caller, task_id: uuid.UUID, relation: Relation,
+                    target_ref: Annotated[str, Query(pattern=r"^empire:[a-z0-9-]+:[a-z0-9-]+:[A-Za-z0-9:._-]+$")],
+                    ) -> RemovalResult:
+        """Withdraw a link; the graph retracts the edge and keeps its history."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            row = conn.execute("DELETE FROM tasks.task_links WHERE task_id = %s AND relation = %s AND target_ref = %s"
+                               " RETURNING id", (task_id, relation, target_ref)).fetchone()
+            outcome["value"] = "removed" if row else "absent"
+            return before
+
+        change(caller, task_id, "tasks.link:write", "unlinked", apply,
+               extra={"relation": relation, "target_ref": target_ref})
+        return RemovalResult(outcome=outcome["value"])
+
     @app.get("/v1/task-assignments", response_model=AssignmentList,
              responses={401: {"model": Problem}, 403: {"model": Problem}})
     def list_assignments(
@@ -1044,6 +1066,27 @@ def create_app(
         change(caller, task_id, "tasks.suggestion:write", "role-suggested", apply,
                extra={"role_id": body.role_id, "review_status": body.review_status})
         return RoleSuggestionResult(outcome=outcome["value"])
+
+    @app.delete("/v1/tasks/{task_id}/role-suggestions", response_model=RemovalResult,
+                responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def withdraw_role(caller: Caller, task_id: uuid.UUID,
+                      role_id: Annotated[str, Query(min_length=1, max_length=200)],
+                      source_registry: Annotated[str, Query(min_length=1, max_length=300)],
+                      only_status: Literal["suggested", "accepted", "dismissed"] | None = None) -> RemovalResult:
+        """Withdraw a generated suggestion; with only_status a reviewed one is never removed."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            row = conn.execute(
+                "DELETE FROM tasks.task_role_suggestions WHERE task_id = %s AND role_id = %s AND source_registry = %s"
+                " AND (%s::text IS NULL OR review_status = %s) RETURNING id",
+                (task_id, role_id, source_registry, only_status, only_status)).fetchone()
+            outcome["value"] = "removed" if row else "absent"
+            return before
+
+        change(caller, task_id, "tasks.suggestion:write", "role-suggested", apply,
+               extra={"role_id": role_id, "withdrawn": True})
+        return RemovalResult(outcome=outcome["value"])
 
     @app.get("/v1/task-types", response_model=TaskTypeList, responses={401: {"model": Problem}, 403: {"model": Problem}})
     def list_task_types(caller: Caller, include_inactive: bool = False) -> TaskTypeList:

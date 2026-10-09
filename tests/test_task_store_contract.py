@@ -161,6 +161,11 @@ def read_scenario(store) -> dict:
                       store.suggest_role(a, "role.writer", registry, "medium", "report and plan")]
     out["suggestions"] = [(r["task"] == a, r["role_id"], r["confidence"], r["review_status"])
                           for r in store.role_suggestions(source_registry=registry)]
+    store.suggest_role(b, "role.stale", registry, "low", "old match")
+    out["withdraw"] = [store.withdraw_role(b, "role.stale", registry, only_status="suggested"),
+                       store.withdraw_role(a, "role.writer", registry, only_status="suggested"),
+                       store.unlink(b, "skill", 11), store.unlink(b, "skill", 11)]
+    out["after_withdraw"] = (len(store.role_suggestions(source_registry=registry)), len(store.links(task=b)))
     return out
 
 
@@ -181,6 +186,7 @@ def test_read_and_relation_methods_agree(task_store, api_url, cluster, tmp_path)
     assert legacy["assign"] == ["created", "unchanged", "created"]
     assert legacy["suggest"] == ["created", "unchanged", True, False, "updated"]
     assert legacy["suggestions"] == [(True, "role.writer", "medium", "accepted")]
+    assert legacy["withdraw"] == [True, False, True, False] and legacy["after_withdraw"] == (1, 1)
     for key in legacy:
         assert api[key] == legacy[key], key
 

@@ -35,6 +35,7 @@
         "tasks.task.unarchived",
         "tasks.task.deleted",
         "tasks.task.linked",
+        "tasks.task.unlinked",
         "tasks.task.assigned",
         "tasks.task.role-suggested",
         "tasks.reminder.delivered"
