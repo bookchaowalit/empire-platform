@@ -1,0 +1,115 @@
+"""Operations the SQLite writers need, and that retries never duplicate."""
+
+from __future__ import annotations
+
+import threading
+import uuid
+from datetime import date, datetime, timedelta, timezone
+
+from test_tasks_api import client, create, keys, superuser, token, world  # noqa: F401  (fixtures)
+
+
+def events_for(cluster, urn: str) -> list[str]:
+    return [row[0] for row in superuser(cluster, "SELECT type FROM tasks.outbox WHERE subject = %s ORDER BY occurred_at, id", (urn,))]
+
+
+def test_external_upsert_creates_once_then_updates_or_does_nothing(client, token, world, cluster):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    key = f"/v1/tasks/external/task-sync/LT-{uuid.uuid4().hex[:6]}"
+    first = client.put(key, json={"title": "Ticket", "priority": 2}, headers=owner)
+    retry = client.put(key, json={"title": "Ticket", "priority": 2}, headers=owner)
+    changed = client.put(key, json={"title": "Ticket", "priority": 1}, headers=owner)
+    assert (first.status_code, first.json()["outcome"]) == (201, "created")
+    assert (retry.status_code, retry.json()["outcome"]) == (200, "unchanged")
+    assert (changed.status_code, changed.json()["outcome"]) == (200, "updated")
+    task = first.json()["task"]
+    assert retry.json()["task"]["id"] == changed.json()["task"]["id"] == task["id"]
+    assert task["external_source"] == "task-sync"
+    assert events_for(cluster, task["urn"]) == ["tasks.task.created", "tasks.task.updated"]
+
+
+def test_concurrent_external_upserts_create_one_task(client, token, world, cluster):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    external_id = f"race-{uuid.uuid4().hex[:6]}"
+    results: list[int] = []
+
+    def put() -> None:
+        results.append(client.put(f"/v1/tasks/external/gmail/{external_id}", json={"title": "Reply"}, headers=owner).status_code)
+
+    threads = [threading.Thread(target=put) for _ in range(5)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert sorted(results).count(201) == 1 and all(code in (200, 201) for code in results)
+    count = superuser(cluster, "SELECT count(*) FROM tasks.tasks WHERE external_source = 'gmail' AND external_id = %s",
+                      (external_id,))[0][0]
+    assert count == 1
+
+
+def test_same_external_key_in_another_workspace_is_separate(client, token, world):  # noqa: F811
+    path = f"/v1/tasks/external/engagements/E-{uuid.uuid4().hex[:6]}"
+    alpha = client.put(path, json={"title": "Alpha"}, headers=token(world.owner, world.alpha)).json()
+    beta = client.put(path, json={"title": "Beta"}, headers=token(world.outsider, world.beta)).json()
+    assert alpha["outcome"] == beta["outcome"] == "created"
+    assert alpha["task"]["id"] != beta["task"]["id"]
+
+
+def test_reminder_delivery_is_recorded_once(client, token, world, cluster):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    reminder_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(microsecond=0)
+    task = create(client, owner, title="Stretch", reminder_at=reminder_at.isoformat(), reminder_channels="line")
+    body = {"reminder_at": reminder_at.isoformat(), "channel": "line"}
+    first = client.post(f"/v1/tasks/{task['id']}/reminders/delivered", json=body, headers=owner)
+    retries = [client.post(f"/v1/tasks/{task['id']}/reminders/delivered", json=body, headers=owner) for _ in range(3)]
+    assert first.json()["outcome"] == "recorded"
+    assert {r.json()["outcome"] for r in retries} == {"already_recorded"}
+    assert client.get(f"/v1/tasks/{task['id']}", headers=owner).json()["reminder_sent"] is True
+    deliveries = superuser(cluster, "SELECT count(*) FROM tasks.reminder_deliveries WHERE task_id = %s", (task["id"],))[0][0]
+    assert deliveries == 1
+    assert events_for(cluster, task["urn"]).count("tasks.reminder.delivered") == 1
+
+
+def test_recurring_occurrences_are_generated_once(client, token, world, cluster):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    parent = create(client, owner, title="Weekly long run", recurrence_rule="weekly", due_date="2026-10-01")
+    until = {"until": "2026-10-22"}
+    first = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json=until, headers=owner).json()
+    retry = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json=until, headers=owner).json()
+    assert [t["due_date"] for t in first["created"]] == ["2026-10-08", "2026-10-15", "2026-10-22"]
+    assert [t["title"] for t in first["created"]][0] == "[R1] Weekly long run"
+    assert retry["created"] == [] and retry["existing"] == 3
+    later = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json={"until": "2026-10-29"}, headers=owner).json()
+    assert [(t["recurrence_occurrence"], t["due_date"]) for t in later["created"]] == [(4, "2026-10-29")]
+    instances = superuser(cluster, "SELECT count(*) FROM tasks.tasks WHERE parent_recurring_id = %s", (parent["id"],))[0][0]
+    assert instances == 4
+
+
+def test_generate_requires_a_rule(client, token, world):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    task = create(client, owner, title="One-off")
+    response = client.post(f"/v1/tasks/{task['id']}/occurrences/generate", json={"until": str(date.today())}, headers=owner)
+    assert response.status_code == 422
+
+
+def test_writer_fields_round_trip_and_archive(client, token, world, cluster):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    parent = create(client, owner, title="Plan race")
+    child = create(client, owner, title="Book hotel", parent_task_id=parent["id"], notes="near start line",
+                   calendar_event_id="gcal-1", estimated_minutes=30)
+    assert (child["parent_task_id"], child["notes"], child["calendar_event_id"]) == (parent["id"], "near start line", "gcal-1")
+    patched = client.patch(f"/v1/tasks/{child['id']}", headers=owner,
+                           json={"calendar_event_id": "gcal-2", "actual_minutes": 25,
+                                 "started_at": "2026-10-09T08:00:00+07:00"}).json()
+    assert (patched["calendar_event_id"], patched["actual_minutes"]) == ("gcal-2", 25)
+    archived = client.post(f"/v1/tasks/{child['id']}/archive", json={"reason": "booked"}, headers=owner).json()
+    assert archived["archived_at"] is not None and archived["archive_reason"] == "booked"
+    assert child["id"] not in [t["id"] for t in client.get("/v1/tasks", headers=owner).json()["items"]]
+    assert events_for(cluster, child["urn"])[-1] == "tasks.task.archived"
+
+
+def test_parent_from_another_workspace_is_rejected(client, token, world):  # noqa: F811
+    beta_task = create(client, token(world.outsider, world.beta), title="Beta parent")
+    response = client.post("/v1/tasks", json={"title": "Child", "parent_task_id": beta_task["id"]},
+                           headers=token(world.owner, world.alpha))
+    assert response.status_code == 422 and response.json()["detail"]["error"] == "reference_not_found"

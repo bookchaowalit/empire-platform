@@ -2,27 +2,150 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:empire:contracts:tasks:event:v1",
   "title": "Tasks cell event envelope v1",
-  "description": "Rows of tasks.outbox as published to other cells (spec Domain Cells §4).",
+  "description": "Rows of tasks.outbox as published to other cells (spec Domain Cells \u00a74).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspace_id", "type", "version", "subject", "execution_id", "classification", "payload", "occurred_at"],
+  "required": [
+    "id",
+    "workspace_id",
+    "type",
+    "version",
+    "subject",
+    "execution_id",
+    "classification",
+    "payload",
+    "occurred_at"
+  ],
   "properties": {
-    "id": {"type": "string", "format": "uuid", "description": "Idempotency key for consumers."},
-    "workspace_id": {"type": "string", "format": "uuid"},
-    "type": {"enum": ["tasks.task.created", "tasks.task.updated", "tasks.task.completed", "tasks.task.deleted", "tasks.task.linked"]},
-    "version": {"const": 1},
-    "subject": {"type": "string", "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"},
-    "execution_id": {"type": "string", "format": "uuid"},
-    "classification": {"enum": ["public", "internal", "confidential", "restricted"]},
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Idempotency key for consumers."
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "type": {
+      "enum": [
+        "tasks.task.created",
+        "tasks.task.updated",
+        "tasks.task.completed",
+        "tasks.task.archived",
+        "tasks.task.deleted",
+        "tasks.task.linked",
+        "tasks.reminder.delivered"
+      ]
+    },
+    "version": {
+      "const": 1
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"
+    },
+    "execution_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "classification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ]
+    },
     "payload": {
       "type": "object",
-      "required": ["task"],
+      "required": [
+        "task",
+        "version",
+        "deleted"
+      ],
       "properties": {
-        "task": {"type": "string", "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"},
-        "status": {"enum": ["todo", "in_progress", "done", "blocked", "cancelled"]}
-      }
+        "task": {
+          "type": "string",
+          "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Task version after the change; consumers ignore events older than what they hold."
+        },
+        "deleted": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "in_progress",
+            "done",
+            "blocked",
+            "cancelled"
+          ]
+        },
+        "archived": {
+          "type": "boolean"
+        },
+        "relation": {
+          "enum": [
+            "supports-goal",
+            "belongs-to",
+            "related-to",
+            "depends-on",
+            "part-of"
+          ]
+        },
+        "target_type": {
+          "enum": [
+            "goal",
+            "project",
+            "context",
+            "skill",
+            "task"
+          ]
+        },
+        "target_ref": {
+          "type": "string"
+        },
+        "reminder_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "channel": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
-    "occurred_at": {"type": "string", "format": "date-time"},
-    "published_at": {"type": ["string", "null"], "format": "date-time"}
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "published_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "next_attempt_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "last_error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
   }
 }
