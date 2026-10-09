@@ -246,3 +246,18 @@ def test_upsert_with_if_match_never_clobbers_a_newer_edit(setup):
     missing = f"/v1/tasks/external/probe/{uuid.uuid4().hex[:8]}"
     assert client.put(missing, json={"title": "x"}, headers={**owner, "If-Match": "1"}).status_code == 412
     assert client.get(missing.replace("/v1/tasks/external", "/v1/tasks/external"), headers=owner).status_code == 404
+
+
+def test_dependencies_are_idempotent_and_validated(setup):
+    client, headers, owner, made, ids = setup
+    a, b = made["a"], made["b"]
+    put = lambda task, body: client.put(f"/v1/tasks/{task['id']}/dependencies", json=body, headers=owner)  # noqa: E731
+    assert put(b, {"depends_on": a["number"]}).json()["outcome"] == "created"
+    assert put(b, {"depends_on": a["number"]}).json()["outcome"] == "unchanged"
+    assert put(b, {"depends_on": b["number"]}).status_code == 422  # no self dependency
+    assert put(b, {"depends_on": 999999}).status_code == 422
+    items = client.get("/v1/task-dependencies", params={"task": b["number"]}, headers=owner).json()["items"]
+    assert items == [{"task_number": b["number"], "depends_on_number": a["number"], "dependency_type": "finish_to_start"}]
+    reader = headers(sub=ids["bot"], delegation=ids["reader"])
+    assert put.__call__ and client.put(f"/v1/tasks/{a['id']}/dependencies", json={"depends_on": b["number"]},
+                                       headers=reader).status_code == 403

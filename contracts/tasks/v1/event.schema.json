@@ -38,6 +38,7 @@
         "tasks.task.unlinked",
         "tasks.task.assigned",
         "tasks.task.role-suggested",
+        "tasks.task.dependency-added",
         "tasks.reminder.delivered"
       ]
     },

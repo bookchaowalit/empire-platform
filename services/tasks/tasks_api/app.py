@@ -281,6 +281,25 @@ class RoleSuggestionResult(BaseModel):
     outcome: Literal["created", "updated", "unchanged"]
 
 
+DependencyType = Literal["finish_to_start", "start_to_start", "finish_to_finish", "start_to_finish"]
+
+
+class DependencyPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    depends_on: int = Field(ge=0, description="Task number this task depends on")
+    dependency_type: DependencyType = "finish_to_start"
+
+
+class Dependency(BaseModel):
+    task_number: int
+    depends_on_number: int
+    dependency_type: DependencyType
+
+
+class DependencyList(BaseModel):
+    items: list[Dependency]
+
+
 class RemovalResult(BaseModel):
     outcome: Literal["removed", "absent"]
 
@@ -1131,6 +1150,47 @@ def create_app(
         change(caller, task_id, "tasks.suggestion:write", "role-suggested", apply,
                extra={"role_id": role_id, "withdrawn": True})
         return RemovalResult(outcome=outcome["value"])
+
+    @app.get("/v1/task-dependencies", response_model=DependencyList,
+             responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_dependencies(
+        caller: Caller,
+        task: Annotated[int | None, Query(ge=0)] = None,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    ) -> DependencyList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                "SELECT t.legacy_id AS task_number, d.legacy_id AS depends_on_number, x.dependency_type"
+                " FROM tasks.task_dependencies x JOIN tasks.tasks t ON t.id = x.task_id"
+                " JOIN tasks.tasks d ON d.id = x.depends_on_task_id"
+                " WHERE (%(task)s::uuid IS NULL OR x.task_id = %(task)s)"
+                " ORDER BY t.legacy_id, d.legacy_id OFFSET %(offset)s LIMIT %(limit)s",
+                {"task": by_number(conn, task), "offset": offset, "limit": limit}).fetchall()
+        return DependencyList(items=[Dependency(**row) for row in rows])
+
+    @app.put("/v1/tasks/{task_id}/dependencies", response_model=AssignmentResult,
+             responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem},
+                        422: {"model": Problem}})
+    def add_dependency(caller: Caller, task_id: uuid.UUID, body: DependencyPut) -> AssignmentResult:
+        """Idempotent: the same dependency twice changes nothing."""
+        outcome: dict[str, str] = {}
+
+        def apply(conn, before, execution):
+            target = by_number(conn, body.depends_on)
+            if target is None or target == uuid.UUID(int=0) or target == task_id:
+                raise HTTPException(status_code=422, detail={"error": "invalid_dependency"})
+            row = conn.execute(
+                "INSERT INTO tasks.task_dependencies (workspace_id, task_id, depends_on_task_id, dependency_type)"
+                " VALUES (%s, %s, %s, %s) ON CONFLICT (task_id, depends_on_task_id) DO NOTHING RETURNING id",
+                (caller.workspace, task_id, target, body.dependency_type)).fetchone()
+            outcome["value"] = "created" if row else "unchanged"
+            return before
+
+        change(caller, task_id, "tasks.link:write", "dependency-added", apply,
+               extra={"depends_on": body.depends_on})
+        return AssignmentResult(outcome=outcome["value"])
 
     @app.get("/v1/task-types", response_model=TaskTypeList, responses={401: {"model": Problem}, 403: {"model": Problem}})
     def list_task_types(caller: Caller, include_inactive: bool = False) -> TaskTypeList:

@@ -160,6 +160,78 @@
         "title": "AssignmentResult",
         "type": "object"
       },
+      "Dependency": {
+        "properties": {
+          "dependency_type": {
+            "enum": [
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish"
+            ],
+            "title": "Dependency Type",
+            "type": "string"
+          },
+          "depends_on_number": {
+            "title": "Depends On Number",
+            "type": "integer"
+          },
+          "task_number": {
+            "title": "Task Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_number",
+          "depends_on_number",
+          "dependency_type"
+        ],
+        "title": "Dependency",
+        "type": "object"
+      },
+      "DependencyList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Dependency"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DependencyList",
+        "type": "object"
+      },
+      "DependencyPut": {
+        "additionalProperties": false,
+        "properties": {
+          "dependency_type": {
+            "default": "finish_to_start",
+            "enum": [
+              "finish_to_start",
+              "start_to_start",
+              "finish_to_finish",
+              "start_to_finish"
+            ],
+            "title": "Dependency Type",
+            "type": "string"
+          },
+          "depends_on": {
+            "description": "Task number this task depends on",
+            "minimum": 0.0,
+            "title": "Depends On",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "depends_on"
+        ],
+        "title": "DependencyPut",
+        "type": "object"
+      },
       "ExternalIdentity": {
         "additionalProperties": false,
         "properties": {
@@ -1925,6 +1997,128 @@
           }
         },
         "summary": "List Assignments"
+      }
+    },
+    "/v1/task-dependencies": {
+      "get": {
+        "operationId": "list_dependencies_v1_task_dependencies_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "task",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Dependencies"
       }
     },
     "/v1/task-links": {
@@ -4332,6 +4526,119 @@
           }
         },
         "summary": "Complete Task"
+      }
+    },
+    "/v1/tasks/{task_id}/dependencies": {
+      "put": {
+        "description": "Idempotent: the same dependency twice changes nothing.",
+        "operationId": "add_dependency_v1_tasks__task_id__dependencies_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-empire-channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Empire-Channel"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          }
+        },
+        "summary": "Add Dependency"
       }
     },
     "/v1/tasks/{task_id}/external-identity": {

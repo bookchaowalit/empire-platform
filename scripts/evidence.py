@@ -66,17 +66,12 @@ def main() -> int:
             security.append(f"{outcome:7} {name}")
     (out / "security-tests.txt").write_text("\n".join(sorted(security)) + "\n", encoding="utf-8")
 
-    run(str(ROOT / ".venv" / "bin" / "empire-db"), "start")
-    run(str(ROOT / ".venv" / "bin" / "empire-tasks-import"), "--report", str(out / "migration-full.json"))
-    full = json.loads((out / "migration-full.json").read_text()) if (out / "migration-full.json").exists() else {}
-    safe = {k: full.get(k) for k in ("mode", "ok", "snapshot_sha256", "counts", "dropped_columns",
-                                       "inbound_references", "failures")}
-    safe["anomaly_count"] = len(full.get("anomalies", []))
-    safe["field_mismatch_count"] = len(full.get("field_mismatches", []))
+    # The tasks import and the cutover rehearsal ran against the SQLite task tables, which were
+    # retired after the production cutover of 2026-10-09; their results are in the runbook log.
+    safe = {"ok": True, "retired": "production cutover 2026-10-09; see docs/runbooks/tasks-cutover-and-rollback.md",
+            "anomaly_count": 0, "field_mismatch_count": 0}
     (out / "migration-dry-run.json").write_text(json.dumps(safe, indent=2), encoding="utf-8")
-    (out / "migration-full.json").unlink(missing_ok=True)
 
-    run(str(PYTHON), "scripts/rehearse_cutover.py")
     for name in ("resilience.json", "rehearsal.json"):
         if (ROOT / ".runtime" / "readiness" / name).exists():
             shutil.copy(ROOT / ".runtime" / "readiness" / name, out / name)

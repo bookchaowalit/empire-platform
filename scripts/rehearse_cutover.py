@@ -1,4 +1,9 @@
-"""Rehearse cutover and rollback on a copy of the current Solo Empire data.
+"""RETIRED (2026-10-09): rehearse cutover and rollback on a copy of the current Solo Empire data.
+
+The cutover is done, the rollback window was waived, and the SQLite task tables are dropped from
+the live database, so this rehearsal can no longer run (``main`` exits with a notice). The body is
+kept as a record of how the cutover was rehearsed; it imports the SQLite store from the test-support
+module, because the production adapter no longer contains it.
 
 Everything runs against a throwaway PostgreSQL cluster and a copy of the
 SQLite control-plane database; the live database is only read, through the
@@ -54,8 +59,11 @@ def adapter():
     if utils is None:
         sys.exit("not inside a Solo Empire checkout: the TaskStore adapter is needed")
     sys.path.insert(0, str(utils))
+    sys.path.insert(0, str(utils.parents[1] / "tests" / "support"))
+    import sqlite_task_store
     import task_store
 
+    task_store.SqliteTaskStore = sqlite_task_store.SqliteTaskStore  # historical: the double, not production
     return task_store
 
 
@@ -97,7 +105,10 @@ def refused(call) -> str | None:
 
 
 def main() -> int:
-    ts = adapter()
+    print("rehearse_cutover.py is retired: the SQLite task backend was retired on 2026-10-09; "
+          "tasks live in the Tasks API", file=sys.stderr)
+    return 2
+    ts = adapter()  # noqa: unreachable, kept as the historical record
     report: dict = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "checks": {}}
     checks = report["checks"]
     root = Path(tempfile.mkdtemp(prefix="ep-rh-"))

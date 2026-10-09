@@ -1,6 +1,7 @@
 """Solo Empire's TaskStore adapter behaves the same on SQLite and on the Tasks API.
 
-The adapter lives in the Solo Empire repository (infra/scripts/utils/task_store.py);
+The adapter lives in the Solo Empire repository (infra/scripts/utils/task_store.py); its SQLite
+backend is retired and kept only as a test double (infra/tests/support/sqlite_task_store.py);
 this test runs one writer scenario against both backends over real HTTP and
 compares the outcomes. Skipped when this checkout is not inside Solo Empire.
 """
@@ -38,6 +39,17 @@ def task_store():
 
     yield module
     sys.path.remove(str(ADAPTER_DIR))
+
+
+@pytest.fixture(scope="module")
+def sqlite_store():
+    """The SQLite task backend was retired on 2026-10-09; it survives only as a test double in Solo Empire."""
+    support = ADAPTER_DIR.parents[1] / "tests" / "support"
+    sys.path.insert(0, str(support))
+    import sqlite_task_store
+
+    yield sqlite_task_store.SqliteTaskStore
+    sys.path.remove(str(support))
 
 
 @pytest.fixture(scope="module")
@@ -170,13 +182,15 @@ def read_scenario(store) -> dict:
                        store.withdraw_role(a, "role.writer", registry, only_status="suggested"),
                        store.unlink(b, "skill", 11), store.unlink(b, "skill", 11)]
     out["after_withdraw"] = (len(store.role_suggestions(source_registry=registry)), len(store.links(task=b)))
+    out["dependency"] = [store.add_dependency(b, a), store.add_dependency(b, a)]
+    out["dependencies"] = [(d["task"] == b, d["depends_on"] == a, d["dependency_type"]) for d in store.dependencies(task=b)]
     return out
 
 
-def test_read_and_relation_methods_agree(task_store, api_url, cluster, tmp_path):
+def test_read_and_relation_methods_agree(task_store, sqlite_store, api_url, cluster, tmp_path):
     db = sqlite3.connect(tmp_path / "legacy-read.db", isolation_level=None)
     db.executescript(SCHEMA.read_text(encoding="utf-8"))
-    legacy = read_scenario(task_store.SqliteTaskStore(db))
+    legacy = read_scenario(sqlite_store(db))
 
     url, private_pem = api_url
     with cluster.connect("platform_api") as conn:
@@ -192,14 +206,16 @@ def test_read_and_relation_methods_agree(task_store, api_url, cluster, tmp_path)
     assert legacy["suggest"] == ["created", "unchanged", True, False, "updated"]
     assert legacy["suggestions"] == [(True, "role.writer", "medium", "accepted")]
     assert legacy["withdraw"] == [True, False, True, False] and legacy["after_withdraw"] == (1, 1)
+    assert legacy["dependency"] == ["created", "unchanged"]
+    assert legacy["dependencies"] == [(True, True, "finish_to_start")]
     for key in legacy:
         assert api[key] == legacy[key], key
 
 
-def test_sqlite_and_api_backends_agree(task_store, api_url, cluster, tmp_path):
+def test_sqlite_and_api_backends_agree(task_store, sqlite_store, api_url, cluster, tmp_path):
     db = sqlite3.connect(tmp_path / "legacy.db", isolation_level=None)
     db.executescript(SCHEMA.read_text(encoding="utf-8"))
-    legacy = scenario(task_store.SqliteTaskStore(db))
+    legacy = scenario(sqlite_store(db))
 
     url, private_pem = api_url
     with cluster.connect("platform_api") as conn:
@@ -228,8 +244,8 @@ def test_api_backend_reports_permission_errors(task_store, api_url, cluster):
     assert error.value.status == 403 and error.value.reason == "no_permission"
 
 
-def test_store_rejects_unknown_fields(task_store, tmp_path):
+def test_store_rejects_unknown_fields(sqlite_store, tmp_path):
     db = sqlite3.connect(tmp_path / "legacy.db")
     db.executescript(SCHEMA.read_text(encoding="utf-8"))
     with pytest.raises(ValueError, match="sync_status"):
-        task_store.SqliteTaskStore(db).create({"title": "x", "sync_status": "synced"})
+        sqlite_store(db).create({"title": "x", "sync_status": "synced"})
