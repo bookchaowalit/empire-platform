@@ -632,6 +632,19 @@ def create_app(
 
         return to_task(change(caller, task_id, "tasks.archive:write", "archived", apply))
 
+    @app.post("/v1/tasks/{task_id}/unarchive", response_model=Task,
+              responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def unarchive_task(caller: Caller, task_id: uuid.UUID) -> Task:
+        """Recovery path of the deletion policy: archived tasks come back intact."""
+        def apply(conn, before, execution):
+            return conn.execute(
+                "UPDATE tasks.tasks SET archived_at = NULL, archive_reason = NULL, updated_by_execution = %s"
+                f" WHERE id = %s RETURNING {', '.join(TASK_COLUMNS)}",
+                (execution, task_id),
+            ).fetchone()
+
+        return to_task(change(caller, task_id, "tasks.archive:write", "unarchived", apply))
+
     @app.post("/v1/tasks/{task_id}/reminders/delivered", response_model=ReminderResult,
               responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
     def reminder_delivered(caller: Caller, task_id: uuid.UUID, body: ReminderDelivered) -> ReminderResult:

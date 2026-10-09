@@ -93,6 +93,9 @@ def scenario(store) -> dict:
     old = store.create({"title": "Old done"})
     store.complete(old)
     store.archive(old, "older than 30 days")
+    restored = store.create({"title": "Archived by mistake"})
+    store.archive(restored, "mistake")
+    store.unarchive(restored)
 
     def view(task):
         return (task["title"], task["status"], task["due_date"], bool(task["completed_at"]), task["calendar_event_id"],

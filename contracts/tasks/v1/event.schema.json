@@ -32,6 +32,7 @@
         "tasks.task.updated",
         "tasks.task.completed",
         "tasks.task.archived",
+        "tasks.task.unarchived",
         "tasks.task.deleted",
         "tasks.task.linked",
         "tasks.reminder.delivered"
