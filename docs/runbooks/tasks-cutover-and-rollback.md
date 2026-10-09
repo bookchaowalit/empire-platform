@@ -1,7 +1,9 @@
 # Tasks cutover and rollback
 
-Status: **production cutover done on 2026-10-09** (rollback window until
-2026-10-16). Before that: rehearsed locally on a copy of current data. A production cutover needs owner
+Status: **production cutover done and the SQLite side retired on 2026-10-09.**
+The owner waived the 7-day rollback window. The rollback steps below are kept
+as history; the SQLite task tables no longer exist (Solo Empire migration 080),
+so recovery now means restoring from a Neon branch or the archived SQLite copy. A production cutover needs owner
 approval, the writer migrations in the Solo Empire phase 1 plan (§5.1.1), and
 a hosted database, none of which exist yet.
 
@@ -155,3 +157,25 @@ now never echo a connection string (test in `tests/test_cutover_rollback.py`).
 Rollback during the window: `tasks_backend.py use-sqlite` stops clients from
 using the API, then follow "Rollback" above (API writes off, export to SQLite,
 unfreeze).
+
+## Retirement (2026-10-09)
+
+| Step | Result |
+|---|---|
+| Final archive | SQLite copy with all 88 tasks in `~/.local/share/empire-platform/cutover/` (owner-only) |
+| Adapters | the SQLite backend was removed from the Python, TypeScript, and both Go adapters; it survives only as a test double; `tasks_backend.py use-sqlite` was removed |
+| Live SQLite | migration 080 rebuilt the ten tables that referenced `tasks(id)` without that foreign key (every row kept: 134, 70, and 5 linked rows) and dropped the eleven task tables; integrity ok, no foreign-key violations |
+| Dependencies | `task_dependencies` moved to `GET /v1/task-dependencies` and `PUT /v1/tasks/{id}/dependencies` |
+| Tests | `task test` runs with `EMPIRE_CLIENT_CONFIG` pointed at a missing file, so no test can reach the production API |
+
+Incident during retirement: before that test isolation existed, test runs used
+the production switch for about ten minutes and wrote to production (63 test
+tasks, due dates of 2 tasks, completion of 1 task, one role suggestion). Every
+change was found from the outbox and execution log and reverted through the
+API (deletes with an owner approval, field restores from the archive). A full
+comparison then showed production equal to the archived state except for the
+archived smoke-test task 89.
+
+Recovery from now on: create a branch from a Neon point in time or from the
+snapshot branch `cutover-after-import-*`, or re-import from the archived SQLite
+copy into a new workspace.
