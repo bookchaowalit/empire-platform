@@ -58,9 +58,9 @@ class FakeNeon(BaseHTTPRequestHandler):
             return self.reply(200, {"roles": [{"name": n} for n in s["roles"]]})
         if path == f"{base}/roles" and self.command == "POST":
             s["roles"].append(self.body()["role"]["name"])
-            return self.reply(201, {"role": {"name": "empire_migrator", "password": "pw"}, **op})
+            return self.reply(201, {"role": {"name": "empire_migrator", "password": "pw"}, **op})  # pragma: allowlist secret (synthetic test value)
         if path == f"{base}/roles/empire_migrator/reveal_password":
-            return self.reply(200, {"password": "pw/with?odd&chars"})
+            return self.reply(200, {"password": "pw/with?odd&chars"})  # pragma: allowlist secret (synthetic test value)
         if path == f"{base}/databases" and self.command == "GET":
             return self.reply(200, {"databases": [{"name": n} for n in s["databases"]]})
         if path == f"{base}/databases" and self.command == "POST":
@@ -88,7 +88,7 @@ def test_provisioning_api_calls_are_idempotent(fake_neon):
     client, state = fake_neon
     first = neon.ensure_project(client, "empire-platform", "aws-ap-southeast-1")
     password = neon.ensure_migrator(client, *first[:2])
-    assert first == ("p-1", "br-1", "ep-1.neon.test") and password == "pw/with?odd&chars"
+    assert first == ("p-1", "br-1", "ep-1.neon.test") and password == "pw/with?odd&chars"  # pragma: allowlist secret (synthetic test value)
     creates = [c for c in state["calls"] if c[0] == "POST"]
     assert len(creates) == 4  # project (after one 423 retry), migrator role, database
     state["calls"].clear()
@@ -140,10 +140,10 @@ def test_default_cluster_switches_on_mode(monkeypatch, tmp_path):
 
 
 def test_hosted_urls_must_use_verifying_tls():
-    good = {r: f"postgresql://{r}:pw@h/empire?sslmode={mode}" for r, mode in
+    good = {r: f"postgresql://{r}:pw@h/empire?sslmode={mode}" for r, mode in  # pragma: allowlist secret (synthetic test value)
             (("a", "require"), ("b", "verify-ca"), ("c", "verify-full"))}
-    cluster = HostedCluster({**good, "d": "postgresql://d:SECRET@h/empire?sslmode=prefer",
-                             "e": "postgresql://e:SECRET@h/empire", "f": "postgresql://f:SECRET@h/empire?sslmode=disable"})
+    cluster = HostedCluster({**good, "d": "postgresql://d:SECRET@h/empire?sslmode=prefer",  # pragma: allowlist secret (synthetic test value)
+                             "e": "postgresql://e:SECRET@h/empire", "f": "postgresql://f:SECRET@h/empire?sslmode=disable"})  # pragma: allowlist secret (synthetic test value)
     assert [cluster.conninfo(r) for r in "abc"] == list(good.values())
     for role in "def":
         with pytest.raises(SystemExit) as error:
