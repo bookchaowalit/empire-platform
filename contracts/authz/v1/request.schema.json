@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:empire:contracts:authz:request:v1",
+  "title": "AuthorizationRequest v1",
+  "description": "Input to the shared policy decision point. Every language calls platform.authorize with these fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actor", "workspace", "action", "resource", "context"],
+  "properties": {
+    "actor": {"type": "string", "format": "uuid", "description": "Identity performing the action (human, agent, service account, or automation)."},
+    "workspace": {"type": "string", "format": "uuid", "description": "Workspace the request is bound to; must equal the transaction's app.workspace_id."},
+    "action": {"type": "string", "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*:(read|write|delete|approve|admin)$", "description": "<domain>.<resource>:<verb>, e.g. tasks.task:write."},
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "workspace"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1, "description": "Resource ID or URN; '*' for collection-level actions such as list and create."},
+        "workspace": {"type": "string", "format": "uuid", "description": "Workspace that owns the resource, as loaded by the domain service."}
+      }
+    },
+    "delegation": {"type": ["string", "null"], "format": "uuid"},
+    "on_behalf_of": {"type": ["string", "null"], "format": "uuid"},
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel"],
+      "properties": {
+        "channel": {"enum": ["api", "mcp", "workflow", "cli", "event"]},
+        "approval": {"type": ["string", "null"], "format": "uuid"},
+        "enforce": {"type": "boolean", "default": false, "description": "True in the transaction that performs the action: locks delegation, membership, and approval rows to close the time-of-check gap."}
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "contract": "urn:empire:contracts:authz:request:v1",
+  "description": "Every client of the policy decision point, in any language, must reproduce these decisions. Names stand for identities, workspaces, delegations, and approvals created from `world`.",
+  "world": {
+    "workspaces": {
+      "alpha": {"owner": "owner", "owner_permissions": ["tasks.task:read", "tasks.task:write", "tasks.task:delete"]},
+      "beta": {"owner": "outsider", "owner_permissions": ["tasks.task:read", "tasks.task:write"]}
+    },
+    "members": {
+      "alpha": {"partner": "human", "coach": "agent"}
+    },
+    "delegations": {
+      "coach_read": {"workspace": "alpha", "grantor": "owner", "grantee": "coach", "scopes": ["tasks.task:read"]},
+      "coach_write": {"workspace": "alpha", "grantor": "owner", "grantee": "coach", "scopes": ["tasks.task:read", "tasks.task:write"]},
+      "coach_delete": {"workspace": "alpha", "grantor": "owner", "grantee": "coach", "scopes": ["tasks.task:delete"]},
+      "coach_revoked": {"workspace": "alpha", "grantor": "owner", "grantee": "coach", "scopes": ["tasks.task:read"], "revoked": true},
+      "coach_expired": {"workspace": "alpha", "grantor": "owner", "grantee": "coach", "scopes": ["tasks.task:read"], "expired": true}
+    },
+    "policies": {
+      "alpha": [{"permission": "tasks.task:delete", "requires_approval": true}]
+    },
+    "approvals": {
+      "delete_approved": {"workspace": "alpha", "action": "tasks.task:delete", "decision": "approved"},
+      "delete_rejected": {"workspace": "alpha", "action": "tasks.task:delete", "decision": "rejected"},
+      "delete_pending": {"workspace": "alpha", "action": "tasks.task:delete", "decision": "pending"},
+      "write_approved": {"workspace": "alpha", "action": "tasks.task:write", "decision": "approved"}
+    }
+  },
+  "cases": [
+    {"name": "owner can write", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:write", "resource_workspace": "alpha"}, "expect": ["allow", "allowed"]},
+    {"name": "deny by default for a member without roles", "bound_to": "alpha", "request": {"actor": "partner", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha"}, "expect": ["deny", "no_permission"]},
+    {"name": "unknown action format is invalid", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.update", "resource_workspace": "alpha"}, "expect": ["deny", "invalid_request"]},
+    {"name": "resource in another workspace looks like a missing resource", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "beta"}, "expect": ["deny", "resource_not_found"]},
+    {"name": "request for a workspace other than the bound one", "bound_to": "beta", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha"}, "expect": ["deny", "workspace_mismatch"]},
+    {"name": "outsider has no permission in alpha", "bound_to": "alpha", "request": {"actor": "outsider", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha"}, "expect": ["deny", "no_permission"]},
+    {"name": "agent without delegation", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha"}, "expect": ["deny", "no_permission"]},
+    {"name": "agent within a read delegation", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "delegation": "coach_read", "on_behalf_of": "owner"}, "expect": ["allow", "allowed"]},
+    {"name": "agent beyond a read delegation", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:write", "resource_workspace": "alpha", "delegation": "coach_read", "on_behalf_of": "owner"}, "expect": ["deny", "no_permission"]},
+    {"name": "revoked delegation", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "delegation": "coach_revoked"}, "expect": ["deny", "delegation_invalid"]},
+    {"name": "expired delegation", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "delegation": "coach_expired"}, "expect": ["deny", "delegation_invalid"]},
+    {"name": "delegation used by someone other than its grantee", "bound_to": "alpha", "request": {"actor": "partner", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "delegation": "coach_read"}, "expect": ["deny", "delegation_invalid"]},
+    {"name": "on_behalf_of must be the grantor", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "delegation": "coach_read", "on_behalf_of": "partner"}, "expect": ["deny", "delegation_invalid"]},
+    {"name": "acting for someone else needs a delegation", "bound_to": "alpha", "request": {"actor": "partner", "workspace": "alpha", "action": "tasks.task:read", "resource_workspace": "alpha", "on_behalf_of": "owner"}, "expect": ["deny", "delegation_invalid"]},
+    {"name": "policy requires approval", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha"}, "expect": ["require_approval", "approval_required"]},
+    {"name": "pending approval is not enough", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha", "approval": "delete_pending"}, "expect": ["require_approval", "approval_required"]},
+    {"name": "approved approval allows", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha", "approval": "delete_approved"}, "expect": ["allow", "allowed_with_approval"]},
+    {"name": "rejected approval denies", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha", "approval": "delete_rejected"}, "expect": ["deny", "approval_rejected"]},
+    {"name": "approval for a different action does not count", "bound_to": "alpha", "request": {"actor": "owner", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha", "approval": "write_approved"}, "expect": ["require_approval", "approval_required"]},
+    {"name": "agent with delegated delete still needs approval", "bound_to": "alpha", "request": {"actor": "coach", "workspace": "alpha", "action": "tasks.task:delete", "resource_workspace": "alpha", "delegation": "coach_delete", "on_behalf_of": "owner"}, "expect": ["require_approval", "approval_required"]}
+  ]
+}

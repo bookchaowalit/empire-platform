@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:empire:contracts:authz:decision:v1",
+  "title": "AuthorizationDecision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "reason", "decision_id"],
+  "properties": {
+    "decision": {"enum": ["allow", "deny", "require_approval"]},
+    "reason": {
+      "enum": [
+        "allowed", "allowed_with_approval", "no_permission", "workspace_mismatch",
+        "resource_not_found", "delegation_invalid", "approval_required", "approval_rejected",
+        "invalid_request"
+      ]
+    },
+    "decision_id": {"type": ["string", "null"], "format": "uuid", "description": "Row in platform.authorization_decisions; null only for workspace_mismatch, which is not recorded."}
+  }
+}

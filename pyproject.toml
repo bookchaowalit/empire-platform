@@ -10,13 +10,14 @@ dev = ["pytest>=8", "pgserver>=0.1.4"]
 
 [project.scripts]
 empire-db = "empire_platform.devdb:main"
+empire-tasks-import = "empire_platform.tasks_import:main"
 
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "packages/authz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

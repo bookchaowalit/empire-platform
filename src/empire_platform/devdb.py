@@ -23,7 +23,10 @@ import psycopg
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BOOTSTRAP = REPO_ROOT / "db" / "bootstrap" / "roles.sql"
-MIGRATION_DIRS = [REPO_ROOT / "services" / "platform" / "migrations"]
+MIGRATION_DIRS = [
+    REPO_ROOT / "services" / "platform" / "migrations",
+    REPO_ROOT / "services" / "tasks" / "migrations",
+]
 DATABASE = "empire"
 SUPERUSER = "postgres"
 PORT = 5432  # only used to name the Unix socket file; TCP is disabled
@@ -97,7 +100,7 @@ def bootstrap(cluster: Cluster) -> None:
             conn.execute(f"CREATE DATABASE {DATABASE} OWNER empire_migrator")
     with cluster.connect(SUPERUSER, DATABASE, autocommit=True) as conn:
         conn.execute(f"REVOKE ALL ON DATABASE {DATABASE} FROM PUBLIC")
-        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api")
+        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api")
         conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
 
