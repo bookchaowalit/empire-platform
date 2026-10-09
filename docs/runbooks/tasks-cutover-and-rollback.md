@@ -78,14 +78,12 @@ and `~/.config/empire-platform/db.env`, never in the repo.
 | Railway service | Config file | Variables |
 |---|---|---|
 | `tasks-api` | `railway.json` (healthcheck `/health`) | `EMPIRE_SERVICE=api`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_API`, `TASKS_API_JWT_PUBLIC_KEY_PEM`, `TASKS_API_JWT_ISSUER`, `TASKS_API_HOST=0.0.0.0` |
-| `tasks-publisher` | `railway.publisher.json` (no healthcheck) | `EMPIRE_SERVICE=publisher`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_PUBLISHER`, `EMPIRE_DB_URL_GRAPH_API`, optional `PUBLISH_INTERVAL` (seconds, default 5) |
+| `tasks-publisher` | `railway.json` (healthcheck `/health`) | `EMPIRE_SERVICE=publisher`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_PUBLISHER`, `EMPIRE_DB_URL_GRAPH_API`, optional `PUBLISH_INTERVAL` (seconds, default 5) |
 
 - Railway sets `PORT`; the API honors it before `TASKS_API_PORT`.
-- A single `railway.json` cannot serve both: the publisher has no HTTP port, so a
-  healthcheck would fail every deploy. In the publisher service settings set
-  "Config as code" path to `/railway.publisher.json`. No start-command override
-  is needed because the entrypoint reads `EMPIRE_SERVICE`; the equivalent manual
-  override is `empire-publish --loop 5`.
+- One `railway.json` serves both: with `PORT` set, the publisher answers
+  `/health` (200 while its loop runs, 503 once it stops). No start-command
+  override is needed because the entrypoint reads `EMPIRE_SERVICE`.
 - In hosted mode the API refuses to start without `TASKS_API_JWT_PUBLIC_KEY_PEM`
   or with the dev issuer `empire-platform-dev`, or with the dev public key.
   Tokens WITHOUT a delegation (`del` claim, i.e. owner tokens) are limited to

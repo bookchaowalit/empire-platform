@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import threading
 from collections.abc import Callable
@@ -112,8 +113,28 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    if os.environ.get("PORT"):
+        serve_health(int(os.environ["PORT"]), stop)
     run_loop(step, args.loop, stop)
     return 0
+
+
+def serve_health(port: int, stop: threading.Event) -> None:
+    """/health for the platform's deploy check: 200 while the loop runs, 503 once it stops."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Health(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            healthy = self.path == "/health" and not stop.is_set()
+            self.send_response(200 if healthy else 503)
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}' if healthy else b"")
+
+        def log_message(self, *args) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("0.0.0.0", port), Health)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 
 
 if __name__ == "__main__":

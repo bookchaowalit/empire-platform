@@ -196,3 +196,26 @@ def test_default_ttl_is_one_hour(tmp_path):
     token = mint(key_pair()[0], sub=uuid.uuid4(), ws=uuid.uuid4(), ttl=3600)
     claims = jwt.decode(token, options={"verify_signature": False})
     assert claims["exp"] - claims["iat"] == 3600
+
+
+def test_publisher_health_endpoint_follows_the_loop():
+    import socket
+    import threading
+    import urllib.error
+    import urllib.request
+
+    from tasks_api.publisher import serve_health
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    stop = threading.Event()
+    serve_health(port, stop)
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5) as response:
+        assert response.status == 200
+    stop.set()
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=5)
+        raise AssertionError("expected 503 after stop")
+    except urllib.error.HTTPError as error:
+        assert error.code == 503
