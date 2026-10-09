@@ -1,6 +1,7 @@
 # Tasks cutover and rollback
 
-Status: rehearsed locally only (2026-10-09). A production cutover needs owner
+Status: **production cutover done on 2026-10-09** (rollback window until
+2026-10-16). Before that: rehearsed locally on a copy of current data. A production cutover needs owner
 approval, the writer migrations in the Solo Empire phase 1 plan (§5.1.1), and
 a hosted database, none of which exist yet.
 
@@ -130,3 +131,27 @@ Rotating means a new key pair, a new public key variable, and re-minted tokens.
   SQLite keeps its own copies.
 - Execution, audit, and authorization records exist only in PostgreSQL; keep
   the backup from rollback step 2.
+
+## Production cutover log (2026-10-09)
+
+| Step | Result |
+|---|---|
+| Neon | project `empire-platform` (aws-ap-southeast-1, PG 16), database `empire`, 14 migrations, runtime roles verified (no elevated attributes or memberships) |
+| Railway | project `empire-platform`, services `tasks-api` (`/health` 200, 401 without a token) and `tasks-publisher` |
+| Backup | SQLite copy and Neon snapshot branch `cutover-after-import-<timestamp>`; on Neon use a snapshot branch, because the bundled `pg_dump` has no TLS |
+| Freeze, import | SQLite task tables frozen; import 88/88 tasks, every table count equal, 0 field mismatches |
+| Identities | 22 automations with delegations and 30-day tokens in `~/.config/empire-platform/tokens` |
+| task-sync ledger | seeded 88/88 |
+| Read parity | every TaskStore read method equal between frozen SQLite and the production API |
+| Switch | `tasks_backend.py use-api --url https://tasks-api-production-4785.up.railway.app` |
+| Smoke | create through `owner-cli` ok; archive refused for `owner-cli` (no archive scope) and done with a one-hour owner token; publisher delivered the events; monitor ok |
+| Monitor | daily at 02:17 local time from the owner's crontab, alerts on Telegram |
+
+Incident during cutover: the first `pg_dump` attempt failed and its traceback
+printed the migrator connection URL. The migrator password was rotated
+through the Neon API at once (old password rejected), and `backup`/`restore`
+now never echo a connection string (test in `tests/test_cutover_rollback.py`).
+
+Rollback during the window: `tasks_backend.py use-sqlite` stops clients from
+using the API, then follow "Rollback" above (API writes off, export to SQLite,
+unfreeze).

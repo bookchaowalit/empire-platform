@@ -165,3 +165,18 @@ def test_export_is_all_or_nothing(cluster, rehearsal, monkeypatch):
         # The freeze is still in place after a failed export.
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("INSERT INTO tasks (title) VALUES ('x')")
+
+
+def test_tool_failures_never_echo_the_connection_string(tmp_path):
+    import pytest
+
+    from empire_platform.cutover import ToolFailed, _run_tool
+
+    fake = tmp_path / "pg_dump"
+    fake.write_text("#!/bin/sh\necho \"connection to $2 failed\" >&2\nexit 1\n")
+    fake.chmod(0o755)
+    secret_url = "postgresql://empire_migrator:not-a-real-password@host.example/empire?sslmode=require"  # pragma: allowlist secret
+    with pytest.raises(ToolFailed) as failure:
+        _run_tool([str(fake)], secret_url)
+    assert "not-a-real-password" not in str(failure.value) and "<connection>" in str(failure.value)
+    assert failure.value.__cause__ is None and failure.value.__context__ is None

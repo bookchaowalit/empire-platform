@@ -17,6 +17,8 @@ Runbook: docs/runbooks/tasks-cutover-and-rollback.md
 from __future__ import annotations
 
 import json
+import re
+import os
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
@@ -38,11 +40,20 @@ LINK_TABLES = {
 }
 
 
+class ToolFailed(RuntimeError):
+    """A PostgreSQL client tool failed; the message never contains the connection string."""
+
+
+def _run_tool(args: list[str], conninfo: str) -> None:
+    """Run pg_dump/pg_restore; the connection string never appears in an error or traceback."""
+    result = subprocess.run([*args, "--dbname", conninfo], capture_output=True, text=True)
+    if result.returncode != 0:
+        detail = re.sub(r"postgres(ql)?://\S+", "<connection>", result.stderr or "")[-400:]
+        raise ToolFailed(f"{Path(args[0]).name} exited {result.returncode}: {detail.strip()}")
+
+
 def backup(cluster: Cluster, path: Path, dbname: str = "empire") -> Path:
-    subprocess.run(
-        [str(pg_bin_dir() / "pg_dump"), "-Fc", "-f", str(path), cluster.conninfo(SUPERUSER, dbname)],
-        check=True, capture_output=True,
-    )
+    _run_tool([str(pg_bin_dir() / "pg_dump"), "-Fc", "-f", str(path)], cluster.conninfo(SUPERUSER, dbname))
     return path
 
 
@@ -50,10 +61,7 @@ def restore(cluster: Cluster, path: Path, dbname: str) -> None:
     """Restore into a new database ``dbname`` (never over the live one)."""
     with cluster.connect(SUPERUSER, "postgres", autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{dbname}" OWNER empire_migrator')
-    subprocess.run(
-        [str(pg_bin_dir() / "pg_restore"), "--exit-on-error", "-d", cluster.conninfo(SUPERUSER, dbname), str(path)],
-        check=True, capture_output=True,
-    )
+    _run_tool([str(pg_bin_dir() / "pg_restore"), "--exit-on-error", str(path)], cluster.conninfo(SUPERUSER, dbname))
 
 
 def set_writes(cluster: Cluster, enabled: bool, dbname: str = "empire") -> None:
