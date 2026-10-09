@@ -123,6 +123,10 @@ def read_scenario(store) -> dict:
     c = store.create({"title": "Ops", "category": "ops", "priority": 2})
     store.complete(c)
     store.update(b, {"progress_percent": 40})
+    child = store.create({"title": "Child of plan", "parent_task_id": b})
+    out["parent"] = (store.get(child)["parent_task_id"] == b, [r["id"] == child for r in store.list(parent=b)])
+    store.upsert_external("seed", "S-1", {"title": "Seeded child", "parent_task_id": a})
+    out["parent_upsert"] = store.find_external("seed", "S-1")["parent_task_id"] == a
     numbers = lambda rows: sorted(r["title"] for r in rows)  # noqa: E731
     out["project"] = numbers(store.list(project="alpha"))
     out["priority"] = numbers(store.list(priority_max=2))
@@ -181,6 +185,7 @@ def test_read_and_relation_methods_agree(task_store, api_url, cluster, tmp_path)
     api = read_scenario(task_store.ApiTaskStore(url, mint(private_pem, sub=ws.owner, ws=ws.id, issuer=ISSUER)))
 
     assert legacy["search"] == ["Plan", "Report 100% done"]
+    assert legacy["parent"] == (True, [True]) and legacy["parent_upsert"] is True
     assert legacy["stats"] == {"total": 3, "groups": {"todo": 2, "done": 1}}
     assert legacy["link"] == ["created", "unchanged", "updated", "created", "created"]
     assert legacy["assign"] == ["created", "unchanged", "created"]

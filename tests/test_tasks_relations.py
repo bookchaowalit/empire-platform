@@ -201,3 +201,31 @@ def test_unlink_retracts_the_graph_edge(setup, cluster):
             "SELECT retracted_at IS NOT NULL FROM graph.edges WHERE from_urn = %s AND to_urn = %s",
             (task["urn"], link["target_ref"])).fetchall()
     assert retracted == [(True,)]
+
+
+def test_reopening_clears_completion(setup):
+    client, _, owner, _, _ = setup
+    task = client.post("/v1/tasks", json={"title": "Reopen me"}, headers=owner).json()
+    client.post(f"/v1/tasks/{task['id']}/complete", headers=owner)
+    reopened = client.patch(f"/v1/tasks/{task['id']}", json={"status": "todo"}, headers=owner).json()
+    assert reopened["status"] == "todo" and reopened["completed_at"] is None
+    key = f"/v1/tasks/external/probe/{uuid.uuid4().hex[:8]}"
+    assert client.put(key, json={"title": "Upstream", "status": "done"}, headers=owner).json()["task"]["completed_at"]
+    again = client.put(key, json={"title": "Upstream", "status": "in_progress"}, headers=owner).json()["task"]
+    assert again["status"] == "in_progress" and again["completed_at"] is None
+
+
+def test_external_identity_is_set_once(setup):
+    client, _, owner, _, _ = setup
+    first = client.post("/v1/tasks", json={"title": "Pushed out"}, headers=owner).json()
+    other = client.post("/v1/tasks", json={"title": "Another"}, headers=owner).json()
+    ref = f"td-{uuid.uuid4().hex[:8]}"
+    put = lambda task, ext: client.put(f"/v1/tasks/{task['id']}/external-identity",  # noqa: E731
+                                       json={"source": "todoist", "external_id": ext}, headers=owner)
+    bound = put(first, ref)
+    assert bound.status_code == 200 and (bound.json()["external_source"], bound.json()["external_id"]) == ("todoist", ref)
+    assert put(first, ref).status_code == 200  # same identity: no-op
+    assert put(first, "different").status_code == 409  # already bound
+    assert put(other, ref).status_code == 409  # identity used by another task
+    found = client.get(f"/v1/tasks/external/todoist/{ref}", headers=owner).json()
+    assert found["id"] == first["id"]

@@ -123,6 +123,12 @@ class GenerateOccurrences(BaseModel):
     until: date
 
 
+class ExternalIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")
+    external_id: str = Field(min_length=1, max_length=200)
+
+
 class UpsertResult(BaseModel):
     outcome: Literal["created", "updated", "unchanged"]
     task: "Task"
@@ -692,11 +698,14 @@ def create_app(
         def apply(conn, before, execution):
             if if_match is not None and str(before["version"]) != if_match.strip('"'):
                 raise HTTPException(status_code=412, detail={"error": "version_mismatch"})
-            assignments = ", ".join(f"{column} = %s" for column in updates)
+            values = dict(updates)
+            if "status" in values and before["status"] == "done":  # reopening clears completion
+                values["completed_at"] = None
+            assignments = ", ".join(f"{column} = %s" for column in values)
             return conn.execute(
                 f"UPDATE tasks.tasks SET {assignments}, updated_by_execution = %s WHERE id = %s"
                 f" RETURNING {TASK_FIELDS}",
-                [*updates.values(), execution, task_id],
+                [*values.values(), execution, task_id],
             ).fetchone()
 
         if set(updates) <= STATUS_FIELDS:
@@ -755,6 +764,29 @@ def create_app(
                extra={"relation": body.relation, "target_type": body.target_type, "target_ref": body.target_ref})
         return Link(**created)
 
+    @app.put("/v1/tasks/{task_id}/external-identity", response_model=Task,
+             responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem},
+                        409: {"model": Problem}})
+    def set_external_identity(caller: Caller, task_id: uuid.UUID, body: ExternalIdentity) -> Task:
+        """Record the upstream identity of a task created here and pushed out by a sync.
+
+        Idempotent for the same identity; a task already bound to a different one,
+        or an identity already used by another task, is a conflict.
+        """
+        def apply(conn, before, execution):
+            current = (before["external_source"], before["external_id"])
+            wanted = (body.source, body.external_id)
+            if current == wanted:
+                return before
+            if current != (None, None):
+                raise HTTPException(status_code=409, detail={"error": "conflict", "reason": "identity_already_set"})
+            return conn.execute(
+                f"UPDATE tasks.tasks SET external_source = %s, external_id = %s, updated_by_execution = %s"
+                f" WHERE id = %s RETURNING {TASK_FIELDS}",
+                (body.source, body.external_id, execution, task_id)).fetchone()
+
+        return to_task(change(caller, task_id, "tasks.task:write", "updated", apply))
+
     @app.put("/v1/tasks/external/{source}/{external_id}", response_model=UpsertResult,
              responses={401: {"model": Problem}, 403: {"model": Problem}, 422: {"model": Problem}})
     def upsert_external(caller: Caller, source: Annotated[str, Path_(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")],
@@ -792,6 +824,8 @@ def create_app(
                 return UpsertResult(outcome="unchanged", task=to_task(before))
             if changes.get("status") == "done":
                 changes["completed_at"] = before["completed_at"] or datetime.now().astimezone()
+            elif "status" in changes and before["status"] == "done":  # reopened upstream
+                changes["completed_at"] = None
             assignments = ", ".join(f"{column} = %s" for column in changes)
             after = conn.execute(
                 f"UPDATE tasks.tasks SET {assignments}, updated_by_execution = %s WHERE id = %s"
