@@ -8,6 +8,7 @@ Writes .runtime/evidence/<timestamp>/ (ignored by git) containing:
 - migration-dry-run.json: tasks import dry run against the Solo Empire SQLite
   (counts, references, anomalies; no task content)
 - resilience.json: measurements from tests/test_resilience.py
+- rehearsal.json: cutover and rollback on a copy of current data (scripts/rehearse_cutover.py)
 - commits.txt and diffstat.txt: history of this repository
 - contracts/: the committed API, event, authorization, and automation contracts
 - secrets-scan.json: detect-secrets findings (expected empty)
@@ -75,9 +76,12 @@ def main() -> int:
     (out / "migration-dry-run.json").write_text(json.dumps(safe, indent=2), encoding="utf-8")
     (out / "migration-full.json").unlink(missing_ok=True)
 
-    resilience = ROOT / ".runtime" / "readiness" / "resilience.json"
-    if resilience.exists():
-        shutil.copy(resilience, out / "resilience.json")
+    run(str(PYTHON), "scripts/rehearse_cutover.py")
+    for name in ("resilience.json", "rehearsal.json"):
+        if (ROOT / ".runtime" / "readiness" / name).exists():
+            shutil.copy(ROOT / ".runtime" / "readiness" / name, out / name)
+    rehearsal = json.loads((out / "rehearsal.json").read_text()) if (out / "rehearsal.json").exists() else {}
+    failed_checks = sorted(k for k, v in rehearsal.get("checks", {}).items() if not v)
     (out / "commits.txt").write_text(run("git", "log", "--format=%h %ad %s", "--date=short").stdout, encoding="utf-8")
     first = run("git", "rev-list", "--max-parents=0", "HEAD").stdout.split()[0]
     (out / "diffstat.txt").write_text(run("git", "diff", "--stat", first, "HEAD").stdout, encoding="utf-8")
@@ -97,6 +101,7 @@ Generated {stamp} from commit `{head}`.
 | Tests | {totals['tests']} run, {totals['failures']} failures, {totals['errors']} errors, {totals['skipped']} skipped |
 | Security-relevant tests | {passed} of {len(security)} passed (security-tests.txt) |
 | Migration dry run | ok={safe.get('ok')}, anomalies={safe['anomaly_count']}, field mismatches={safe['field_mismatch_count']} |
+| Rehearsal on current data copy | ok={rehearsal.get('ok')}, {len(rehearsal.get('checks', {}))} checks, failed: {', '.join(failed_checks) or 'none'} |
 | Secrets scan | {len(findings) if isinstance(findings, dict) else 'error'} files with findings |
 
 ## Known limitations
@@ -111,7 +116,7 @@ python scripts/evidence.py
 ```
 """, encoding="utf-8")
     print(out)
-    return 0 if totals["failures"] == totals["errors"] == 0 and safe.get("ok") else 1
+    return 0 if totals["failures"] == totals["errors"] == 0 and safe.get("ok") and rehearsal.get("ok") else 1
 
 
 if __name__ == "__main__":

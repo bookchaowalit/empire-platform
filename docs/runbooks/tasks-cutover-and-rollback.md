@@ -15,7 +15,7 @@ switch is off while SQLite accepts writes again.
 | 1. Back up both sides | copy `infra/database/solo-empire.db`; `cutover.backup()` (pg_dump) | `test_restore_from_backup_recovers_schema_and_data` |
 | 2. Freeze SQLite tasks writers | `cutover.freeze_sqlite()` installs refusing triggers on the tasks tables | `test_frozen_sqlite_refuses_writers_until_rollback` |
 | 3. Final import | `empire-tasks-import --apply` (verifies counts, references, and every field; commits only if all pass) | `tests/test_tasks_import.py` |
-| 4. Writers switch to the API | each writer uses its automation identity and delegation | not yet: writer migrations pending |
+| 4. Writers switch to the API | `SOLO_EMPIRE_TASKS_BACKEND=api` plus one token per automation (`empire-automations provision --workspace owner --tokens DIR`) | `scripts/rehearse_cutover.py` on a copy of current data; Go and TypeScript writers still pending |
 | 5. API writes on | `cutover.set_writes(True)` | `test_write_switch_stops_api_writes_but_not_reads` |
 
 ## Rollback
@@ -27,6 +27,15 @@ switch is off while SQLite accepts writes again.
 | 3. Export to SQLite | `cutover.export_to_sqlite()`: updates, new tasks (new SQLite IDs, parents resolved), deletions, and new links to legacy targets, in one SQLite transaction | `test_full_rollback_keeps_every_write_made_after_cutover`, `test_export_is_all_or_nothing` |
 | 4. Review unmapped links | links to entities that only exist in the new system are listed in `ExportReport.links_unmapped` and stay in the PostgreSQL backup | `test_full_rollback_keeps_every_write_made_after_cutover` |
 | 5. Unfreeze SQLite | `cutover.unfreeze_sqlite()`; writers go back to SQLite | same |
+
+## Full rehearsal on current data
+
+`python scripts/rehearse_cutover.py` copies the live SQLite database (read-only
+backup API) into a throwaway cluster, runs cutover, writer operations with
+their own identities (retries, scope denials, a revocation mid-run), and the
+rollback above, then checks that no task was lost, duplicated, or changed
+unless a writer changed it. The report in `.runtime/readiness/rehearsal.json`
+holds counts only.
 
 ## Schema or data damage without leaving PostgreSQL
 
