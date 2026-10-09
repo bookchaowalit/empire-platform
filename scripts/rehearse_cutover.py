@@ -135,6 +135,38 @@ def main() -> int:
                          issuer=ISSUER)
             return ts.ApiTaskStore(url, token, channel="workflow")
 
+        # Read parity on real data: every reader sees the same thing through either backend.
+        reader = store("governance-reader")
+        legacy_reader = ts.SqliteTaskStore(sqlite3.connect(f"file:{copy}?mode=ro", uri=True))
+        reads = {
+            "tasks": lambda s: s.list(include_archived=True),
+            "open_tasks": lambda s: s.list(status=["todo", "in_progress", "blocked"]),
+            "stats_status": lambda s: s.stats(group_by="status", include_archived=True),
+            "stats_project": lambda s: s.stats(group_by="project"),
+            "links": lambda s: s.links(),
+            "assignments": lambda s: s.assignments(),
+            "role_suggestions": lambda s: [{k: v for k, v in r.items() if k != "updated_at"}
+                                           for r in s.role_suggestions()],
+            "task_types": lambda s: [{k: v for k, v in t.items() if k != "id"} for t in s.task_types()],
+        }
+        volatile = {"created_at", "updated_at", "completed_at", "archived_at", "reminder_at", "started_at"}
+
+        def comparable(value):
+            if isinstance(value, list):
+                return [comparable(v) for v in value]
+            if isinstance(value, dict):
+                return {k: (bool(v) if k in volatile else comparable(v)) for k, v in value.items()}
+            return value
+
+        differ = {}
+        for name, read in reads.items():
+            a, b = comparable(read(legacy_reader)), comparable(read(reader))
+            if a != b:
+                differ[name] = sorted({k for x, y in zip(a, b) if isinstance(x, dict) for k in x if x[k] != y.get(k)}
+                                      if isinstance(a, list) and len(a) == len(b) else ["count"])
+        report["read_parity_differences"] = differ
+        checks["read_parity_on_current_data"] = not differ
+
         changed: set[int] = set()
         today = date.today()
 
