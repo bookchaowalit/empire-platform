@@ -3,21 +3,29 @@ name = "empire-platform"
 version = "0.1.0"
 description = "Identity, workspace, authorization, workflow, and graph foundation for Solo Empire domain cells"
 requires-python = ">=3.12"
-dependencies = ["psycopg[binary]>=3.2,<4"]
+dependencies = [
+    "psycopg[binary]>=3.2,<4",
+    "fastapi>=0.115,<1",
+    "pyjwt[crypto]>=2.10,<3",
+    "uvicorn>=0.30,<1",
+]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pgserver>=0.1.4"]
+dev = ["pytest>=8", "pgserver>=0.1.4", "httpx>=0.27", "jsonschema>=4.23"]
 
 [project.scripts]
 empire-db = "empire_platform.devdb:main"
 empire-tasks-import = "empire_platform.tasks_import:main"
+empire-dev-token = "empire_platform.devtoken:main"
+tasks-api = "tasks_api.app:main"
+empire-contracts = "empire_platform.contracts:main"
 
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src", "packages/authz"]
+where = ["src", "packages/authz", "services/tasks"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import psycopg
+from psycopg.rows import tuple_row
 
 
 @dataclass(frozen=True)
@@ -55,7 +56,8 @@ class AuthorizationDenied(Exception):
 
 
 def _call(conn: psycopg.Connection, request: Request, *, lock: bool) -> Decision:
-    row = conn.execute(
+    # Tuple rows regardless of the connection's row factory.
+    row = conn.cursor(row_factory=tuple_row).execute(
         "SELECT decision, reason, decision_id FROM platform.authorize("
         "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (

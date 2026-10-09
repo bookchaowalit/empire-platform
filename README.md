@@ -8,9 +8,10 @@ repository:
 - Domain Cells + Empire Graph: `docs/superpowers/specs/2026-10-09-domain-cells-empire-graph-design.md`
 - Phase 1 plan: `docs/superpowers/plans/2026-10-09-platform-foundation-phase-1.md`
 
-Status: phase 1, items P1.1 (foundation) and P1.2 (identity and workspace
-schema), local PostgreSQL only. No hosted database, deployment, or production
-data is involved.
+Status: phase 1, items P1.1–P1.5 on local PostgreSQL only: platform schema,
+shared authorization (P1.3), tasks schema and import dry run (P1.4), and the
+Tasks API (P1.5). No hosted database, deployment, or production data is
+involved, and SQLite writers have not been switched.
 
 ## Local development
 
@@ -25,6 +26,9 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/empire-db psql       # connect as platform_api
 .venv/bin/empire-db stop
 .venv/bin/python -m pytest     # each run uses its own throwaway cluster
+.venv/bin/empire-tasks-import  # dry run from the Solo Empire SQLite (read-only); --apply commits locally
+.venv/bin/empire-contracts --check
+.venv/bin/tasks-api            # http://127.0.0.1:3601, tokens from empire-dev-token
 ```
 
 ## Layout
@@ -34,7 +38,13 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 | `db/bootstrap/roles.sql` | cluster roles: `empire_migrator` (owns schemas, runs migrations) and `platform_api` (runtime, no BYPASSRLS, owns nothing) |
 | `services/platform/migrations/` | `platform` schema: identities, workspaces, memberships, roles, policies, delegations, approvals, executions, audit events, RLS, and grants |
 | `src/empire_platform/devdb.py` | local cluster control and the checksum-verified migration runner |
-| `tests/` | tenant isolation, RLS bypass attempts, delegation limits, and migration checks |
+| `services/platform/migrations/0003_*` | `platform.authorize` policy decision point, decision log, and SECURITY DEFINER entry points for domain services |
+| `contracts/authz/v1/` | language-neutral authorization request/decision schemas and conformance cases |
+| `packages/authz/` | Python client (`authorize`, `enforce`) for the decision point |
+| `services/tasks/migrations/` | `tasks` schema with forced RLS, URN links, and the transactional outbox |
+| `services/tasks/tasks_api/` | Tasks API (`tasks.v1`); contract in `contracts/tasks/v1/` |
+| `src/empire_platform/tasks_import.py` | read-only SQLite snapshot import with full verification; dry run by default |
+| `tests/` | isolation, RLS bypass attempts, delegation limits, authorization conformance and TOCTOU, import, API, and contract tests |
 
 ## Security model
 
@@ -50,3 +60,16 @@ uv pip install --python .venv/bin/python -e ".[dev]"
   identity.
 - Application code still authorizes every request; RLS is the second line of
   defence.
+
+## Authorization
+
+`platform.authorize(actor, workspace, action, resource, delegation, on_behalf_of,
+approval, channel, lock)` is the only place that decides. It denies by default,
+answers `resource_not_found` for other workspaces, follows delegation
+revocation and the grantor's live permissions, applies approval policies, and
+records every decision. Other languages call the same function; the contract
+and its conformance cases live in `contracts/authz/v1/`.
+
+Writes check twice: an unlocked, recorded precheck, then `enforce` (with row
+locks) inside the transaction that changes data, so a revocation between the
+two is caught.

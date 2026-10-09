@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:empire:contracts:tasks:event:v1",
+  "title": "Tasks cell event envelope v1",
+  "description": "Rows of tasks.outbox as published to other cells (spec Domain Cells §4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspace_id", "type", "version", "subject", "execution_id", "classification", "payload", "occurred_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid", "description": "Idempotency key for consumers."},
+    "workspace_id": {"type": "string", "format": "uuid"},
+    "type": {"enum": ["tasks.task.created", "tasks.task.updated", "tasks.task.completed", "tasks.task.deleted", "tasks.task.linked"]},
+    "version": {"const": 1},
+    "subject": {"type": "string", "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"},
+    "execution_id": {"type": "string", "format": "uuid"},
+    "classification": {"enum": ["public", "internal", "confidential", "restricted"]},
+    "payload": {
+      "type": "object",
+      "required": ["task"],
+      "properties": {
+        "task": {"type": "string", "pattern": "^empire:tasks:task:[0-9a-f-]{36}$"},
+        "status": {"enum": ["todo", "in_progress", "done", "blocked", "cancelled"]}
+      }
+    },
+    "occurred_at": {"type": "string", "format": "date-time"},
+    "published_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

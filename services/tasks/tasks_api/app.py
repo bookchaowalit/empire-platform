@@ -1,0 +1,372 @@
+"""Tasks cell API (contract tasks.v1).
+
+Every request runs as the ``tasks_api`` database role, bound to the token's
+workspace with ``SET LOCAL``. Writes follow one pattern:
+
+1. a recorded, unlocked authorization check in its own transaction, so
+   denials are audited even though nothing else happens;
+2. one transaction that opens an execution, re-checks authorization with
+   locks (``enforce``), changes the data, writes the outbox event and the
+   audit event, and closes the execution.
+
+Resources outside the caller's workspace or permissions answer 404, the
+same as resources that do not exist.
+"""
+
+# No `from __future__ import annotations`: FastAPI resolves the dependency
+# annotations declared inside create_app at runtime.
+import hashlib
+import json
+import os
+import uuid
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from datetime import date, datetime
+from pathlib import Path
+from typing import Annotated, Any, Literal
+
+import psycopg
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
+from psycopg.rows import dict_row
+from pydantic import BaseModel, ConfigDict, Field
+
+from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
+from tasks_api.auth import Principal, TokenVerifier, Unauthenticated
+
+Status = Literal["todo", "in_progress", "done", "blocked", "cancelled"]
+Relation = Literal["supports-goal", "belongs-to", "related-to", "depends-on", "part-of"]
+TargetType = Literal["goal", "project", "context", "skill", "task"]
+TASK_COLUMNS = (
+    "id", "title", "description", "status", "priority", "project", "tags", "category", "due_date",
+    "completed_at", "progress_percent", "version", "created_at", "updated_at",
+)
+
+
+class TaskCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=500)
+    description: str | None = None
+    status: Status = "todo"
+    priority: int = Field(default=3, ge=1, le=5)
+    project: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    category: str | None = None
+    due_date: date | None = None
+
+
+class TaskUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    description: str | None = None
+    status: Literal["todo", "in_progress", "blocked", "cancelled"] | None = None
+    priority: int | None = Field(default=None, ge=1, le=5)
+    project: str | None = None
+    tags: list[str] | None = None
+    category: str | None = None
+    due_date: date | None = None
+    progress_percent: int | None = Field(default=None, ge=0, le=100)
+
+
+class LinkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    relation: Relation
+    target_type: TargetType
+    target_ref: str = Field(pattern=r"^empire:[a-z0-9-]+:[a-z0-9-]+:[A-Za-z0-9:._-]+$")
+
+
+class Task(BaseModel):
+    id: uuid.UUID
+    urn: str
+    title: str
+    description: str | None
+    status: Status
+    priority: int
+    project: str | None
+    tags: list[str]
+    category: str | None
+    due_date: date | None
+    completed_at: datetime | None
+    progress_percent: int
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskList(BaseModel):
+    items: list[Task]
+
+
+class Link(BaseModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    relation: Relation
+    target_type: TargetType
+    target_ref: str
+
+
+class Problem(BaseModel):
+    error: str
+    reason: str | None = None
+
+
+def urn(task_id: uuid.UUID) -> str:
+    return f"empire:tasks:task:{task_id}"
+
+
+def to_task(row: dict[str, Any]) -> Task:
+    return Task(urn=urn(row["id"]), **{k: row[k] for k in TASK_COLUMNS})
+
+
+def row_hash(row: dict[str, Any] | None) -> str | None:
+    if row is None:
+        return None
+    return hashlib.sha256(json.dumps(row, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def create_app(
+    connect: Callable[[], psycopg.Connection],
+    verifier: TokenVerifier,
+) -> FastAPI:
+    app = FastAPI(title="Tasks API", version="1.0.0", description=__doc__)
+
+    def principal(
+        authorization: Annotated[str | None, Header()] = None,
+        x_empire_channel: Annotated[str | None, Header()] = None,
+    ) -> Principal:
+        try:
+            return verifier.verify(authorization, x_empire_channel)
+        except Unauthenticated as exc:
+            raise HTTPException(status_code=401, detail={"error": "unauthenticated", "reason": str(exc)}) from exc
+
+    Caller = Annotated[Principal, Depends(principal)]
+
+    @contextmanager
+    def bound(caller: Principal) -> Iterator[psycopg.Connection]:
+        conn = connect()
+        conn.row_factory = dict_row
+        try:
+            conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(caller.workspace),))
+            yield conn
+        finally:
+            conn.rollback()
+            conn.close()
+
+    def request_for(caller: Principal, action: str, resource_id: str, approval: uuid.UUID | None = None) -> Request:
+        return Request(
+            actor=caller.actor, workspace=caller.workspace, action=action,
+            resource=Resource("task", resource_id, caller.workspace), channel=caller.channel,
+            delegation=caller.delegation,
+            on_behalf_of=caller.on_behalf_of if caller.delegation else None,
+            approval=approval,
+        )
+
+    def precheck(caller: Principal, request: Request, *, not_found: bool) -> None:
+        """Recorded, unlocked decision in its own transaction."""
+        with bound(caller) as conn:
+            decision = authorize(conn, request)
+            conn.commit()
+        if decision.allowed:
+            return
+        if not_found:
+            raise HTTPException(status_code=404, detail={"error": "not_found"})
+        status = 409 if decision.decision == "require_approval" else 403
+        raise HTTPException(status_code=status, detail={"error": decision.decision, "reason": decision.reason})
+
+    def load(conn: psycopg.Connection, task_id: uuid.UUID, *, lock: bool = False) -> dict[str, Any]:
+        row = conn.execute(
+            f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE id = %s{' FOR UPDATE' if lock else ''}",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "not_found"})
+        return row
+
+    @contextmanager
+    def acting(caller: Principal, request: Request, idempotency_key: str | None) -> Iterator[tuple[psycopg.Connection, uuid.UUID]]:
+        """Execution + locked re-check + the write, all in one transaction."""
+        with bound(caller) as conn:
+            try:
+                # The execution trigger refuses acting for someone without a live delegation.
+                execution = conn.execute(
+                    "SELECT platform.begin_execution(%s, %s, %s, %s, %s, %s, %s) AS id",
+                    (caller.initiated_by, caller.actor, caller.on_behalf_of, caller.delegation,
+                     request.approval, caller.channel, idempotency_key),
+                ).fetchone()["id"]
+                enforce(conn, request)
+            except (AuthorizationDenied, psycopg.errors.InsufficientPrivilege) as denied:
+                conn.rollback()
+                with bound(caller) as audit:
+                    # Record the denial outside the rolled-back transaction.
+                    decision = authorize(audit, request)
+                    audit.commit()
+                if isinstance(denied, AuthorizationDenied):
+                    decision = denied.decision
+                elif decision.allowed:  # the trigger refused although the PDP allows: fail closed
+                    decision = type(decision)("deny", "delegation_invalid", decision.decision_id)
+                status = 409 if decision.decision == "require_approval" else 403
+                raise HTTPException(status_code=status, detail={"error": decision.decision,
+                                                                "reason": decision.reason}) from denied
+            yield conn, execution
+            conn.execute("SELECT platform.finish_execution(%s, 'succeeded')", (execution,))
+            conn.commit()
+
+    def emit(conn: psycopg.Connection, caller: Principal, execution: uuid.UUID, event: str,
+             task_id: uuid.UUID, payload: dict[str, Any], before: dict | None, after: dict | None) -> None:
+        conn.execute(
+            "INSERT INTO tasks.outbox (workspace_id, type, subject, execution_id, payload) VALUES (%s, %s, %s, %s, %s)",
+            (caller.workspace, f"tasks.task.{event}", urn(task_id), execution, json.dumps(payload, default=str)),
+        )
+        conn.execute(
+            "SELECT platform.record_audit(%s, 'tasks', %s, 'task', %s, %s, %s)",
+            (execution, f"tasks.task.{event}", str(task_id), row_hash(before), row_hash(after)),
+        )
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/v1/tasks", response_model=TaskList, responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def list_tasks(caller: Caller, status: Status | None = None,
+                   limit: Annotated[int, Query(ge=1, le=200)] = 50) -> TaskList:
+        precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
+        with bound(caller) as conn:
+            rows = conn.execute(
+                f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
+                " WHERE archived_at IS NULL AND (%s::text IS NULL OR status = %s)"
+                " ORDER BY created_at, id LIMIT %s",
+                (status, status, limit),
+            ).fetchall()
+        return TaskList(items=[to_task(row) for row in rows])
+
+    @app.post("/v1/tasks", status_code=201, response_model=Task,
+              responses={401: {"model": Problem}, 403: {"model": Problem}})
+    def create_task(caller: Caller, body: TaskCreate, response: Response,
+                    idempotency_key: Annotated[str | None, Header()] = None) -> Task:
+        request = request_for(caller, "tasks.task:write", "*")
+        precheck(caller, request, not_found=False)
+        if idempotency_key:
+            with bound(caller) as conn:
+                previous = conn.execute("SELECT * FROM platform.find_execution(%s)", (idempotency_key,)).fetchone()
+                if previous and previous["status"] == "succeeded":
+                    row = conn.execute(
+                        f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE created_by_execution = %s",
+                        (previous["id"],),
+                    ).fetchone()
+                    if row:
+                        response.status_code = 200
+                        return to_task(row)
+        with acting(caller, request, idempotency_key) as (conn, execution):
+            values = body.model_dump()
+            if values["status"] == "done":
+                values["completed_at"] = datetime.now().astimezone()
+            values.update(workspace_id=caller.workspace, created_by_execution=execution, updated_by_execution=execution)
+            columns = list(values)
+            row = conn.execute(
+                f"INSERT INTO tasks.tasks ({', '.join(columns)}) VALUES ({', '.join(['%s'] * len(columns))})"
+                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                [values[c] for c in columns],
+            ).fetchone()
+            emit(conn, caller, execution, "created", row["id"], {"task": urn(row["id"]), "status": row["status"]},
+                 None, row)
+        return to_task(row)
+
+    @app.get("/v1/tasks/{task_id}", response_model=Task, responses={401: {"model": Problem}, 404: {"model": Problem}})
+    def get_task(caller: Caller, task_id: uuid.UUID) -> Task:
+        precheck(caller, request_for(caller, "tasks.task:read", str(task_id)), not_found=True)
+        with bound(caller) as conn:
+            return to_task(load(conn, task_id))
+
+    def change(caller: Principal, task_id: uuid.UUID, action: str, event: str,
+               apply: Callable[[psycopg.Connection, dict[str, Any], uuid.UUID], dict[str, Any] | None],
+               approval: uuid.UUID | None = None, idempotency_key: str | None = None) -> dict[str, Any] | None:
+        request = request_for(caller, action, str(task_id), approval)
+        with bound(caller) as conn:
+            load(conn, task_id)
+        # Callers that may not read the task learn nothing about it.
+        precheck(caller, request_for(caller, "tasks.task:read", str(task_id)), not_found=True)
+        precheck(caller, request, not_found=False)
+        with acting(caller, request, idempotency_key) as (conn, execution):
+            before = load(conn, task_id, lock=True)
+            after = apply(conn, before, execution)
+            emit(conn, caller, execution, event, task_id, {"task": urn(task_id)}, before, after)
+        return after
+
+    @app.patch("/v1/tasks/{task_id}", response_model=Task,
+               responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem},
+                          412: {"model": Problem}})
+    def update_task(caller: Caller, task_id: uuid.UUID, body: TaskUpdate,
+                    if_match: Annotated[str | None, Header()] = None) -> Task:
+        updates = body.model_dump(exclude_unset=True)
+        if not updates:
+            raise HTTPException(status_code=422, detail={"error": "empty_update"})
+
+        def apply(conn, before, execution):
+            if if_match is not None and str(before["version"]) != if_match.strip('"'):
+                raise HTTPException(status_code=412, detail={"error": "version_mismatch"})
+            assignments = ", ".join(f"{column} = %s" for column in updates)
+            return conn.execute(
+                f"UPDATE tasks.tasks SET {assignments}, updated_by_execution = %s WHERE id = %s"
+                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                [*updates.values(), execution, task_id],
+            ).fetchone()
+
+        return to_task(change(caller, task_id, "tasks.task:write", "updated", apply))
+
+    @app.post("/v1/tasks/{task_id}/complete", response_model=Task,
+              responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def complete_task(caller: Caller, task_id: uuid.UUID) -> Task:
+        def apply(conn, before, execution):
+            return conn.execute(
+                "UPDATE tasks.tasks SET status = 'done', completed_at = coalesce(completed_at, now()),"
+                " progress_percent = 100, updated_by_execution = %s WHERE id = %s"
+                f" RETURNING {', '.join(TASK_COLUMNS)}",
+                (execution, task_id),
+            ).fetchone()
+
+        return to_task(change(caller, task_id, "tasks.task:write", "completed", apply))
+
+    @app.delete("/v1/tasks/{task_id}", status_code=204,
+                responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem},
+                           409: {"model": Problem}})
+    def delete_task(caller: Caller, task_id: uuid.UUID,
+                    x_empire_approval: Annotated[uuid.UUID | None, Header()] = None) -> Response:
+        def apply(conn, before, execution):
+            conn.execute("DELETE FROM tasks.tasks WHERE id = %s", (task_id,))
+            return None
+
+        change(caller, task_id, "tasks.task:delete", "deleted", apply, approval=x_empire_approval)
+        return Response(status_code=204)
+
+    @app.post("/v1/tasks/{task_id}/links", status_code=201, response_model=Link,
+              responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
+    def link_task(caller: Caller, task_id: uuid.UUID, body: LinkCreate) -> Link:
+        created: dict[str, Any] = {}
+
+        def apply(conn, before, execution):
+            row = conn.execute(
+                "INSERT INTO tasks.task_links (workspace_id, task_id, relation, target_type, target_ref)"
+                " VALUES (%s, %s, %s, %s, %s)"
+                " ON CONFLICT (task_id, relation, target_ref) DO UPDATE SET updated_at = now()"
+                " RETURNING id, task_id, relation, target_type, target_ref",
+                (caller.workspace, task_id, body.relation, body.target_type, body.target_ref),
+            ).fetchone()
+            created.update(row)
+            return before
+
+        change(caller, task_id, "tasks.task:write", "linked", apply)
+        return Link(**created)
+
+    return app
+
+
+def main() -> None:
+    import uvicorn
+
+    from empire_platform.devdb import default_cluster
+
+    key_path = Path(os.environ.get("TASKS_API_JWT_PUBLIC_KEY", ".runtime/dev-keys/public.pem"))
+    verifier = TokenVerifier(key_path.read_text(encoding="utf-8"),
+                             os.environ.get("TASKS_API_JWT_ISSUER", "empire-platform-dev"))
+    cluster = default_cluster()
+    app = create_app(lambda: cluster.connect("tasks_api"), verifier)
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("TASKS_API_PORT", "3601")))
