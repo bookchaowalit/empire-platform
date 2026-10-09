@@ -71,9 +71,12 @@ def scenario(store) -> dict:
     out["found"] = (found["title"], found["priority"], found["tags"], found["due_date"], found["status"])
     out["missing"] = store.find_external("engagements", "nope")
 
-    weekly = store.create({"title": "Weekly run", "recurrence_rule": "weekly", "due_date": "2026-10-01"})
+    weekly = store.create({"title": "Weekly run", "recurrence_rule": "weekly", "due_date": "2026-10-01",
+                           "estimated_minutes": 30})
     first = store.generate_occurrences(weekly, "2026-10-15")
     out["occurrences"] = [(store.get(n)["title"], store.get(n)["due_date"]) for n in first]
+    out["occurrence_columns"] = [(store.get(n)["recurrence_rule"], store.get(n)["estimated_minutes"],
+                                  store.get(n)["is_recurring_instance"]) for n in first]
     out["occurrences_retry"] = store.generate_occurrences(weekly, "2026-10-15")
 
     reminder = store.create({"title": "Stretch", "reminder_at": "2026-10-10 09:00:00"})
@@ -122,6 +125,7 @@ def test_sqlite_and_api_backends_agree(task_store, api_url, cluster, tmp_path):
     assert legacy["upsert"] == ["created", "unchanged", "updated"]
     assert legacy["found"] == ("Next action", 1, ["client", "oak"], "2026-10-20", "todo")
     assert legacy["occurrences"] == [("[R1] Weekly run", "2026-10-08"), ("[R2] Weekly run", "2026-10-15")]
+    assert legacy["occurrence_columns"] == [("weekly", 30, True)] * 2
     assert legacy["reminder"] == [True, False] and legacy["reminders_due_after"] == []
     for key in legacy:
         assert api[key] == legacy[key], key

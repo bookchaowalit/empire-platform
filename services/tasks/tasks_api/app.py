@@ -690,14 +690,14 @@ def create_app(
                 occurrence += 1
                 row = conn.execute(
                     "INSERT INTO tasks.tasks (workspace_id, title, description, priority, project, tags, category,"
-                    " due_date, is_recurring_instance, recurrence_occurrence, parent_recurring_id,"
-                    " created_by_execution, updated_by_execution)"
-                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s, %s, %s)"
+                    " due_date, recurrence_rule, estimated_minutes, is_recurring_instance, recurrence_occurrence,"
+                    " parent_recurring_id, created_by_execution, updated_by_execution)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true, %s, %s, %s, %s)"
                     " ON CONFLICT (parent_recurring_id, recurrence_occurrence) WHERE parent_recurring_id IS NOT NULL"
                     f" DO NOTHING RETURNING {', '.join(TASK_COLUMNS)}",
                     (caller.workspace, f"[R{occurrence}] {parent['title']}", parent["description"],
                      parent["priority"], parent["project"], parent["tags"], parent["category"], next_due,
-                     occurrence, task_id, execution, execution),
+                     parent["recurrence_rule"], parent["estimated_minutes"], occurrence, task_id, execution, execution),
                 ).fetchone()
                 if row is not None:
                     emit(conn, caller, execution, "created", row["id"], None, row)
