@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from conftest import add_member, create_workspace, delegate, new_id, use_workspace
 from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
 from tasks_api.app import create_app
 from tasks_api.auth import TokenVerifier
 
@@ -42,7 +43,7 @@ def keys(tmp_path_factory):
 def world(cluster) -> World:
     with cluster.connect("platform_api") as conn:
         suffix = uuid.uuid4().hex[:8]
-        alpha = create_workspace(conn, f"alpha-{suffix}", ["tasks.task:read", "tasks.task:write", "tasks.task:delete"])
+        alpha = create_workspace(conn, f"alpha-{suffix}", list(TASKS_OWNER))
         partner = add_member(conn, alpha, "partner", "human")
         coach = add_member(conn, alpha, "coach", "agent")
         use_workspace(conn, alpha.id)
@@ -61,7 +62,7 @@ def world(cluster) -> World:
         approval = new_id(conn)
         conn.execute("INSERT INTO platform.approvals (id, workspace_id, requested_action, approver_identity_id, decision, decided_at)"
                      " VALUES (%s, %s, 'tasks.task:delete', %s, 'approved', now())", (approval, alpha.id, alpha.owner))
-        beta = create_workspace(conn, f"beta-{suffix}", ["tasks.task:read", "tasks.task:write"])
+        beta = create_workspace(conn, f"beta-{suffix}", list(TASKS_OWNER))
         conn.commit()
     return World(alpha.id, beta.id, alpha.owner, partner, coach, beta.owner, coach_read, coach_write, coach_revoked, approval)
 

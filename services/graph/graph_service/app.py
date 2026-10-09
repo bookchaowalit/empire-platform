@@ -62,7 +62,12 @@ def create_app(connect: Callable[[], psycopg.Connection], verifier: TokenVerifie
         except Unauthenticated as exc:
             raise HTTPException(status_code=401, detail={"error": "unauthenticated", "reason": str(exc)}) from exc
 
-    Caller = Annotated[Principal, Depends(principal)]
+    def scoped(caller: Principal = Depends(principal)) -> Principal:
+        if caller.scopes is not None and "graph.query:read" not in caller.scopes:
+            raise HTTPException(status_code=403, detail={"error": "deny", "reason": "scope_insufficient"})
+        return caller
+
+    Caller = Annotated[Principal, Depends(scoped)]
 
     @contextmanager
     def bound(caller: Principal) -> Iterator[psycopg.Connection]:

@@ -17,6 +17,9 @@ class GraphConsumer:
         with self._connect() as conn:
             # Bind to the event's workspace; ingest_event refuses a mismatch.
             conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(event["workspace_id"]),))
-            outcome = conn.execute("SELECT graph.ingest_event(%s::jsonb)", (json.dumps(event, default=str),)).fetchone()[0]
+            payload = json.dumps(event, default=str)
+            outcome = conn.execute("SELECT graph.ingest_event(%s::jsonb)", (payload,)).fetchone()[0]
+            if outcome != "duplicate":
+                conn.execute("SELECT graph.record_correlation(%s::jsonb)", (payload,))
             conn.commit()
             return outcome

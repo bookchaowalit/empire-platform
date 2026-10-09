@@ -32,6 +32,7 @@ from typing import Any
 import psycopg
 
 from empire_platform.devdb import Cluster, default_cluster
+from empire_platform.permissions import TASKS_OWNER
 
 def _default_sqlite() -> Path:
     """The control-plane database of the Solo Empire checkout that contains this repo."""
@@ -209,7 +210,7 @@ def ensure_workspace(pg: psycopg.Connection, slug: str) -> tuple[uuid.UUID, uuid
     pg.execute("INSERT INTO platform.memberships (workspace_id, identity_id) VALUES (%s, %s), (%s, %s)",
                (workspace_id, owner_id, workspace_id, importer_id))
     pg.execute("INSERT INTO platform.roles (id, workspace_id, name) VALUES (%s, %s, 'owner')", (role_id, workspace_id))
-    for permission in ("tasks.task:read", "tasks.task:write", "tasks.task:delete"):
+    for permission in TASKS_OWNER:
         pg.execute("INSERT INTO platform.role_permissions (workspace_id, role_id, permission) VALUES (%s, %s, %s)",
                    (workspace_id, role_id, permission))
     pg.execute("INSERT INTO platform.membership_roles (workspace_id, identity_id, role_id) VALUES (%s, %s, %s)",

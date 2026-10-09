@@ -33,6 +33,7 @@ class Principal:
     on_behalf_of: uuid.UUID
     delegation: uuid.UUID | None
     channel: str
+    scopes: frozenset[str] | None = None  # set only on exchanged tokens; narrows, never widens
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,9 @@ class TokenVerifier:
         channel = channel or "api"
         if channel not in CHANNELS:
             raise Unauthenticated("unknown channel")
+        scopes = frozenset(str(claims["scope"]).split()) if claims.get("scope") else None
         return Principal(
+            scopes=scopes,
             actor=actor,
             workspace=workspace,
             initiated_by=initiated_by,

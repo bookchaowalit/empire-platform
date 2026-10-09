@@ -12,6 +12,7 @@ cannot change who it acts as by adding fields to a tool call.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal
@@ -102,14 +103,17 @@ class StrictMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
-def build_server(tasks: httpx.Client, graph: httpx.Client, token: Callable[[], str]) -> StrictMCPServer:
+def build_server(tasks: httpx.Client, graph: httpx.Client, token: Callable[[], str],
+                 exchange: Callable[[str, str], str] | None = None) -> StrictMCPServer:
+    """``exchange(subject_token, audience)`` swaps the caller's token for a per-cell one when given."""
     server = StrictMCPServer("empire", instructions="Solo Empire tasks and graph. Acts as the authenticated caller only.")
 
-    def headers() -> dict[str, str]:
-        return {"Authorization": f"Bearer {token()}", "X-Empire-Channel": "mcp"}
-
     def call(client: httpx.Client, method: str, path: str, **kwargs: Any) -> Any:
-        response = client.request(method, path, headers=headers(), **kwargs)
+        # One correlation ID per tool call, carried through API, outbox, and graph.
+        bearer = token() if exchange is None else exchange(token(), "tasks-api" if client is tasks else "graph-api")
+        headers = {"Authorization": f"Bearer {bearer}", "X-Empire-Channel": "mcp",
+                   "X-Correlation-Id": f"mcp-{uuid.uuid4().hex}"}
+        response = client.request(method, path, headers=headers, **kwargs)
         if response.status_code >= 400:
             detail = response.json().get("detail") if response.headers.get("content-type", "").startswith("application/json") else None
             reason = detail.get("reason") or detail.get("error") if isinstance(detail, dict) else "error"

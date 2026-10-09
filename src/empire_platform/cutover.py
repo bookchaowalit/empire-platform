@@ -139,19 +139,19 @@ def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbn
             for op in ("insert", "update", "delete"):
                 src.execute(f"DROP TRIGGER IF EXISTS empire_freeze_{table}_{op}")
 
-        ids = {str(task["id"]): task["legacy_id"] for task in tasks if task["legacy_id"] is not None}
-        # New tasks first get SQLite IDs so parent references can resolve.
+        # Task numbers are the SQLite IDs, for imported and new tasks alike.
+        ids = {str(task["id"]): task["legacy_id"] for task in tasks}
+        present = {row[0] for row in src.execute("SELECT id FROM tasks")}
         for task in tasks:
-            if task["legacy_id"] is None:
-                cursor = src.execute("INSERT INTO tasks (title) VALUES (?)", (task["title"],))
-                ids[str(task["id"])] = cursor.lastrowid
-                report.new_legacy_ids[str(task["id"])] = cursor.lastrowid
+            if task["legacy_id"] not in present:
+                src.execute("INSERT INTO tasks (id, title) VALUES (?, ?)", (task["legacy_id"], task["title"]))
+                report.new_legacy_ids[str(task["id"])] = task["legacy_id"]
                 report.inserted += 1
         for task in tasks:
             values = _row_values(task, ids)
             src.execute(f"UPDATE tasks SET {', '.join(f'{c} = ?' for c in values)} WHERE id = ?",
                         [*values.values(), ids[str(task["id"])]])
-            if task["legacy_id"] is not None:
+            if task["legacy_id"] in present:
                 report.updated += 1
         keep = set(ids.values())
         for (legacy,) in src.execute("SELECT id FROM tasks").fetchall():
@@ -160,7 +160,7 @@ def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbn
                 report.deleted += 1
         for link in links:
             if link["legacy_id"] is not None:
-                continue  # existed before the cutover and is still in SQLite
+                continue  # imported from SQLite, so SQLite still has it
             target = LINK_TABLES.get(link["target_type"])
             ref = link["target_ref"].rsplit(":", 1)[-1]
             if target is None or not ref.startswith("legacy-"):

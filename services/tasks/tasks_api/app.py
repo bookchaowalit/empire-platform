@@ -17,17 +17,20 @@ same as resources that do not exist.
 # annotations declared inside create_app at runtime.
 import hashlib
 import json
+import logging
 import os
 import re
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
+from fastapi import Request as HttpRequest
 from fastapi import Path as Path_
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
@@ -44,8 +47,14 @@ TASK_COLUMNS = (
     "estimated_minutes", "actual_minutes", "reminder_at", "reminder_channels", "reminder_sent",
     "recurrence_rule", "is_recurring_instance", "recurrence_occurrence", "parent_recurring_id",
     "external_source", "external_id", "external_url", "archived_at", "archive_reason",
-    "version", "created_at", "updated_at",
+    "version", "created_at", "updated_at", "legacy_id",
 )
+# PATCH fields that narrower automation permissions may change.
+STATUS_FIELDS = {"status", "due_date", "progress_percent"}
+CALENDAR_FIELDS = {"calendar_event_id"}
+CORRELATION = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
+log = logging.getLogger("tasks_api")
 
 
 class TaskCreate(BaseModel):
@@ -133,6 +142,7 @@ class LinkCreate(BaseModel):
 class Task(BaseModel):
     id: uuid.UUID
     urn: str
+    number: int
     title: str
     description: str | None
     status: Status
@@ -188,7 +198,12 @@ def urn(task_id: uuid.UUID) -> str:
 
 
 def to_task(row: dict[str, Any]) -> Task:
-    return Task(urn=urn(row["id"]), **{k: row[k] for k in TASK_COLUMNS})
+    return Task(urn=urn(row["id"]), number=row["legacy_id"], **{k: row[k] for k in TASK_COLUMNS if k != "legacy_id"})
+
+
+def audit_log(**fields: Any) -> None:
+    """One structured line per write decision; IDs and codes only, never content."""
+    log.info(json.dumps({"correlation_id": correlation_id.get(), **fields}, default=str, sort_keys=True))
 
 
 def recurrence_step(rule: str | None) -> timedelta | None:
@@ -233,6 +248,19 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Tasks API", version="1.0.0", description=__doc__)
 
+    @app.middleware("http")
+    async def correlate(request: HttpRequest, call_next):
+        """Carry X-Correlation-Id through the execution, outbox event, and logs."""
+        given = request.headers.get("x-correlation-id", "")
+        token = correlation_id.set(given if CORRELATION.match(given) else uuid.uuid4().hex)
+        try:
+            response = await call_next(request)
+        finally:
+            value = correlation_id.get()
+            correlation_id.reset(token)
+        response.headers["X-Correlation-Id"] = value
+        return response
+
     def principal(
         authorization: Annotated[str | None, Header()] = None,
         x_empire_channel: Annotated[str | None, Header()] = None,
@@ -246,7 +274,10 @@ def create_app(
 
     @contextmanager
     def bound(caller: Principal) -> Iterator[psycopg.Connection]:
-        conn = connect()
+        try:
+            conn = connect()
+        except psycopg.OperationalError as exc:  # pool or server exhausted: fail fast, do not hang
+            raise HTTPException(status_code=503, detail={"error": "unavailable"}) from exc
         conn.row_factory = dict_row
         try:
             conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(caller.workspace),))
@@ -266,6 +297,10 @@ def create_app(
 
     def precheck(caller: Principal, request: Request, *, not_found: bool) -> None:
         """Recorded, unlocked decision in its own transaction."""
+        if caller.scopes is not None and request.action not in caller.scopes:
+            if not_found:
+                raise HTTPException(status_code=404, detail={"error": "not_found"})
+            raise HTTPException(status_code=403, detail={"error": "deny", "reason": "scope_insufficient"})
         with bound(caller) as conn:
             decision = authorize(conn, request)
             conn.commit()
@@ -295,9 +330,9 @@ def create_app(
             try:
                 # The execution trigger refuses acting for someone without a live delegation.
                 execution = conn.execute(
-                    "SELECT platform.begin_execution(%s, %s, %s, %s, %s, %s, %s) AS id",
+                    "SELECT platform.begin_execution(%s, %s, %s, %s, %s, %s, %s, %s) AS id",
                     (caller.initiated_by, caller.actor, caller.on_behalf_of, caller.delegation,
-                     request.approval, caller.channel, idempotency_key),
+                     request.approval, caller.channel, idempotency_key, correlation_id.get()),
                 ).fetchone()["id"]
                 enforce(conn, request)
             except (AuthorizationDenied, psycopg.errors.InsufficientPrivilege) as denied:
@@ -311,6 +346,8 @@ def create_app(
                 elif decision.allowed:  # the trigger refused although the PDP allows: fail closed
                     decision = type(decision)("deny", "delegation_invalid", decision.decision_id)
                 status = 409 if decision.decision == "require_approval" else 403
+                audit_log(event="tasks.write.denied", action=request.action, reason=decision.reason,
+                          actor=caller.actor, workspace=caller.workspace)
                 raise HTTPException(status_code=status, detail={"error": decision.decision,
                                                                 "reason": decision.reason}) from denied
             try:
@@ -321,6 +358,8 @@ def create_app(
                 raise HTTPException(status_code=409, detail={"error": "conflict"}) from exc
             conn.execute("SELECT platform.finish_execution(%s, 'succeeded')", (execution,))
             conn.commit()
+            audit_log(event="tasks.write", action=request.action, execution=execution,
+                      actor=caller.actor, workspace=caller.workspace)
 
     def emit(conn: psycopg.Connection, caller: Principal, execution: uuid.UUID, event: str,
              task_id: uuid.UUID, before: dict | None, after: dict | None, extra: dict | None = None) -> None:
@@ -337,8 +376,10 @@ def create_app(
         payload.update(extra or {})
         event_type = event if "." in event else f"tasks.task.{event}"
         conn.execute(
-            "INSERT INTO tasks.outbox (workspace_id, type, subject, execution_id, payload) VALUES (%s, %s, %s, %s, %s)",
-            (caller.workspace, event_type, urn(task_id), execution, json.dumps(payload, default=str)),
+            "INSERT INTO tasks.outbox (workspace_id, type, subject, execution_id, payload, correlation_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (caller.workspace, event_type, urn(task_id), execution, json.dumps(payload, default=str),
+             correlation_id.get()),
         )
         conn.execute(
             "SELECT platform.record_audit(%s, 'tasks', %s, 'task', %s, %s, %s)",
@@ -350,17 +391,57 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/v1/tasks", response_model=TaskList, responses={401: {"model": Problem}, 403: {"model": Problem}})
-    def list_tasks(caller: Caller, status: Status | None = None,
-                   limit: Annotated[int, Query(ge=1, le=200)] = 50) -> TaskList:
+    def list_tasks(
+        caller: Caller,
+        status: Annotated[list[Status] | None, Query()] = None,
+        external_source: Annotated[str | None, Query(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")] = None,
+        due_before: date | None = None,
+        reminder_due_before: datetime | None = None,
+        missing_calendar_event: bool = False,
+        include_archived: bool = False,
+        after: Annotated[int | None, Query(ge=0, description="Cursor: return tasks numbered above this")] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    ) -> TaskList:
+        """Filters cover what the SQLite-era writers selected; results are ordered by task number."""
         precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
         with bound(caller) as conn:
             rows = conn.execute(
                 f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
-                " WHERE archived_at IS NULL AND (%s::text IS NULL OR status = %s)"
-                " ORDER BY created_at, id LIMIT %s",
-                (status, status, limit),
+                " WHERE (%(archived)s OR archived_at IS NULL)"
+                " AND (%(status)s::text[] IS NULL OR status = ANY(%(status)s))"
+                " AND (%(source)s::text IS NULL OR external_source = %(source)s)"
+                " AND (%(due)s::date IS NULL OR due_date < %(due)s)"
+                " AND (%(reminder)s::timestamptz IS NULL OR (reminder_at <= %(reminder)s AND NOT reminder_sent))"
+                " AND (NOT %(calendar)s OR calendar_event_id IS NULL)"
+                " AND (%(after)s::bigint IS NULL OR legacy_id > %(after)s)"
+                " ORDER BY legacy_id LIMIT %(limit)s",
+                {"archived": include_archived, "status": status, "source": external_source, "due": due_before,
+                 "reminder": reminder_due_before, "calendar": missing_calendar_event, "after": after, "limit": limit},
             ).fetchall()
         return TaskList(items=[to_task(row) for row in rows])
+
+    @app.get("/v1/tasks/number/{number}", response_model=Task,
+             responses={401: {"model": Problem}, 404: {"model": Problem}})
+    def get_by_number(caller: Caller, number: int) -> Task:
+        with bound(caller) as conn:
+            row = conn.execute(f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks WHERE legacy_id = %s",
+                               (number,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "not_found"})
+        precheck(caller, request_for(caller, "tasks.task:read", str(row["id"])), not_found=True)
+        return to_task(row)
+
+    @app.get("/v1/tasks/external/{source}/{external_id}", response_model=Task,
+             responses={401: {"model": Problem}, 404: {"model": Problem}})
+    def get_external(caller: Caller, source: Annotated[str, Path_(pattern=r"^[a-z][a-z0-9_.-]{0,63}$")],
+                     external_id: Annotated[str, Path_(min_length=1, max_length=200)]) -> Task:
+        with bound(caller) as conn:
+            row = conn.execute(f"SELECT {', '.join(TASK_COLUMNS)} FROM tasks.tasks"
+                               " WHERE external_source = %s AND external_id = %s", (source, external_id)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail={"error": "not_found"})
+        precheck(caller, request_for(caller, "tasks.task:read", str(row["id"])), not_found=True)
+        return to_task(row)
 
     @app.post("/v1/tasks", status_code=201, response_model=Task,
               responses={401: {"model": Problem}, 403: {"model": Problem}})
@@ -440,7 +521,13 @@ def create_app(
                 [*updates.values(), execution, task_id],
             ).fetchone()
 
-        return to_task(change(caller, task_id, "tasks.task:write", "updated", apply))
+        if set(updates) <= STATUS_FIELDS:
+            action = "tasks.status:write"
+        elif set(updates) <= CALENDAR_FIELDS:
+            action = "tasks.calendar:write"
+        else:
+            action = "tasks.task:write"
+        return to_task(change(caller, task_id, action, "updated", apply))
 
     @app.post("/v1/tasks/{task_id}/complete", response_model=Task,
               responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
@@ -453,7 +540,7 @@ def create_app(
                 (execution, task_id),
             ).fetchone()
 
-        return to_task(change(caller, task_id, "tasks.task:write", "completed", apply))
+        return to_task(change(caller, task_id, "tasks.status:write", "completed", apply))
 
     @app.delete("/v1/tasks/{task_id}", status_code=204,
                 responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem},
@@ -483,7 +570,7 @@ def create_app(
             created.update(row)
             return before
 
-        change(caller, task_id, "tasks.task:write", "linked", apply,
+        change(caller, task_id, "tasks.link:write", "linked", apply,
                extra={"relation": body.relation, "target_type": body.target_type, "target_ref": body.target_ref})
         return Link(**created)
 
@@ -543,13 +630,13 @@ def create_app(
                 (body.reason, execution, task_id),
             ).fetchone()
 
-        return to_task(change(caller, task_id, "tasks.task:write", "archived", apply))
+        return to_task(change(caller, task_id, "tasks.archive:write", "archived", apply))
 
     @app.post("/v1/tasks/{task_id}/reminders/delivered", response_model=ReminderResult,
               responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
     def reminder_delivered(caller: Caller, task_id: uuid.UUID, body: ReminderDelivered) -> ReminderResult:
         """Record one delivery per reminder time and channel; notifier retries are no-ops."""
-        request = authorized_for(caller, task_id, "tasks.task:write")
+        request = authorized_for(caller, task_id, "tasks.reminder:write")
         with acting(caller, request, None) as (conn, execution):
             before = load(conn, task_id, lock=True)
             delivered = conn.execute(
@@ -573,7 +660,7 @@ def create_app(
                          422: {"model": Problem}})
     def generate_occurrences(caller: Caller, task_id: uuid.UUID, body: GenerateOccurrences) -> OccurrenceResult:
         """Create the due instances of a recurring task up to ``until``; retries create nothing new."""
-        request = authorized_for(caller, task_id, "tasks.task:write")
+        request = authorized_for(caller, task_id, "tasks.occurrence:write")
         with acting(caller, request, None) as (conn, execution):
             parent = load(conn, task_id, lock=True)
             step = recurrence_step(parent["recurrence_rule"])

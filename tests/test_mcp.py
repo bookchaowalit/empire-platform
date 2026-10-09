@@ -102,3 +102,18 @@ def test_end_to_end_task_from_mcp_to_graph(cluster, apps, gworld, gtoken):
     assert call(outsider, "graph.search", {"query": "race hotel"})["items"] == []
     _, graph = apps
     assert (task["urn"], "supports-goal", "in") in neighbors(graph, gtoken(gworld.owner, gworld.ws), gworld.goal)
+
+
+def test_one_correlation_id_links_mcp_api_outbox_and_graph(cluster, apps, gworld, gtoken):
+    agent = gtoken(gworld.coach, gworld.ws, delegation=gworld.coach_rw, obo=gworld.owner)
+    task = call(server_for(apps, agent), "tasks.create", {"title": "Traced task"})
+    run_publisher(cluster)
+    row = superuser(
+        cluster,
+        "SELECT e.correlation_id, o.correlation_id, i.correlation_id FROM tasks.tasks t"
+        " JOIN platform.executions e ON e.id = t.created_by_execution"
+        " JOIN tasks.outbox o ON o.execution_id = e.id"
+        " JOIN graph.inbox i ON i.event_id = o.id WHERE t.id = %s", (task["id"],))
+    assert len(row) == 1
+    execution, outbox, graph = row[0]
+    assert execution.startswith("mcp-") and execution == outbox == graph

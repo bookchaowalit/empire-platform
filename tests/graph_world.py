@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from conftest import add_member, create_workspace, delegate, new_id, use_workspace
 from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
 from graph_service.app import create_app as create_graph_app
 from graph_service.consumer import GraphConsumer
 from tasks_api.app import create_app as create_tasks_app
@@ -52,7 +53,7 @@ def gworld(cluster) -> GraphWorld:
     with cluster.connect("platform_api") as conn:
         suffix = uuid.uuid4().hex[:8]
         ws = create_workspace(conn, f"graph-{suffix}", [
-            "tasks.task:read", "tasks.task:write", "goals.goal:read", "goals.goal:write",
+            *TASKS_OWNER, "goals.goal:read", "goals.goal:write",
             "finance.budget:read", "diary.entry:read", "diary.entry:write"])
         viewer = add_member(conn, ws, "viewer", "human")
         coach = add_member(conn, ws, "coach", "agent")
@@ -64,7 +65,8 @@ def gworld(cluster) -> GraphWorld:
                          (ws.id, role, permission))
         conn.execute("INSERT INTO platform.membership_roles (workspace_id, identity_id, role_id) VALUES (%s, %s, %s)",
                      (ws.id, viewer, role))
-        coach_rw = delegate(conn, ws, ws.owner, coach, ["tasks.task:read", "tasks.task:write", "goals.goal:read"])
+        coach_rw = delegate(conn, ws, ws.owner, coach, ["tasks.task:read", "tasks.task:write", "tasks.link:write",
+                                                           "goals.goal:read"])
         coach_read = delegate(conn, ws, ws.owner, coach, ["tasks.task:read"])
         beta = create_workspace(conn, f"graph-beta-{suffix}", ["tasks.task:read", "goals.goal:read"])
         conn.commit()

@@ -36,7 +36,8 @@ def publish(connect: Callable[[], psycopg.Connection], deliver: Callable[[dict[s
     with connect() as conn:
         conn.row_factory = dict_row
         rows = conn.execute(
-            "SELECT id, workspace_id, type, version, subject, execution_id, classification, payload, occurred_at"
+            "SELECT id, workspace_id, type, version, subject, execution_id, classification, payload, occurred_at,"
+            " correlation_id"
             " FROM tasks.outbox WHERE published_at IS NULL AND next_attempt_at <= now()"
             " ORDER BY occurred_at, id LIMIT %s FOR UPDATE SKIP LOCKED",
             (batch,),
