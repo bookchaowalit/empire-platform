@@ -1,0 +1,23 @@
+[project]
+name = "empire-platform"
+version = "0.1.0"
+description = "Identity, workspace, authorization, workflow, and graph foundation for Solo Empire domain cells"
+requires-python = ">=3.12"
+dependencies = ["psycopg[binary]>=3.2,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pgserver>=0.1.4"]
+
+[project.scripts]
+empire-db = "empire_platform.devdb:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
