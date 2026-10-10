@@ -113,6 +113,9 @@ def test_production_tokens(cluster, monkeypatch, tmp_path):
     assert cells.grant(cluster, ws.id, "decisions") == []  # idempotent
     assert cells.main(["grant", "--workspace", slug, "--cell", "habits"]) == 0
     assert cells.main(["grant", "--workspace", slug, "--cell", "notifications"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "goals"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "projects"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "roles-skills"]) == 0
     keys, tokens = tmp_path / "keys", tmp_path / "tokens"
     generate_keys(keys)
     assert automations.main(["provision", "--workspace", slug, "--tokens", str(tokens), "--key-dir", str(keys),
