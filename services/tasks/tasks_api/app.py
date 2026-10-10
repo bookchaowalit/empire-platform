@@ -1299,4 +1299,14 @@ def main() -> None:
                              mcp_subjects=config.mcp_subjects)
     cluster = default_cluster()
     app = create_app(lambda: cluster.connect("tasks_api"), verifier)
+    # Decentralized cells (own database) reach the platform and graph over HTTP through this process.
+    from platform_api.routes import register
+
+    # Runs as tasks_api: it holds only the platform and graph entry points (authorize, cell executions,
+    # audit, graph.ingest_cell_event), never platform or graph table grants.
+    register(app, connect_platform=lambda: cluster.connect("tasks_api"),
+             platform_verifier=TokenVerifier(config.public_key_pem, config.issuer, audience="platform-api",
+                                             max_lifetime=config.max_lifetime),
+             graph_verifier=TokenVerifier(config.public_key_pem, config.issuer, audience="graph-api",
+                                          max_lifetime=config.max_lifetime))
     uvicorn.run(app, host=config.host, port=config.port)

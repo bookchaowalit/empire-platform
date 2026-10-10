@@ -1,6 +1,6 @@
 {
   "contract": "urn:empire:contracts:automations:v1",
-  "description": "Automation identities for the Solo Empire task writers. Scopes come from what each writer actually does (SQLite statements audited 2026-10-09); a writer never gets the workspace owner's full rights.",
+  "description": "Automation identities for the Solo Empire task and decision writers. Scopes come from what each writer actually does (SQLite statements audited 2026-10-09); a writer never gets the workspace owner's full rights.",
   "delegation_days": 30,
   "automations": [
     {
@@ -70,6 +70,9 @@
       ],
       "does": "creates a review task for each due decision",
       "scopes": [
+        "decisions.decision:read",
+        "decisions.decision:write",
+        "decisions.review:write",
         "tasks.task:read",
         "tasks.task:write"
       ]
@@ -180,6 +183,7 @@
       ],
       "does": "reads tasks and counts for briefings, diaries, digests, alerts, and status reports",
       "scopes": [
+        "decisions.decision:read",
         "tasks.task:read"
       ]
     },
@@ -196,6 +200,7 @@
       ],
       "does": "reads tasks, links, assignments, and suggestions to check integrity rules",
       "scopes": [
+        "decisions.decision:read",
         "tasks.task:read"
       ]
     },
@@ -225,6 +230,7 @@
       ],
       "does": "reads tasks referenced by engagements and CRM evidence",
       "scopes": [
+        "decisions.decision:read",
         "tasks.task:read"
       ]
     },
@@ -237,6 +243,7 @@
       ],
       "does": "serves task lists and counts to the local dashboard and the legacy MCP stats tools",
       "scopes": [
+        "decisions.decision:read",
         "tasks.task:read"
       ]
     },
@@ -270,10 +277,13 @@
       ],
       "does": "the Solo Empire MCP task tools used by agents for the owner; delete_task archives instead of deleting",
       "scopes": [
-        "tasks.task:read",
-        "tasks.task:write",
+        "decisions.decision:approve",
+        "decisions.decision:read",
+        "decisions.decision:write",
+        "tasks.archive:write",
         "tasks.status:write",
-        "tasks.archive:write"
+        "tasks.task:read",
+        "tasks.task:write"
       ]
     },
     {
@@ -284,9 +294,47 @@
       ],
       "does": "the owner's human CLIs (tasks add/done/update/list, decision review completion); read, create, update, and complete tasks; no archive, link, assignment, or delete",
       "scopes": [
+        "decisions.decision:approve",
+        "decisions.decision:delete",
+        "decisions.decision:read",
+        "decisions.decision:write",
+        "decisions.review:write",
+        "tasks.status:write",
         "tasks.task:read",
-        "tasks.task:write",
-        "tasks.status:write"
+        "tasks.task:write"
+      ]
+    },
+    {
+      "id": "decision-engine",
+      "writers": [
+        "infra/scripts/workflows/decision_engine.py"
+      ],
+      "does": "proposes and refreshes decision records from signals, and clears ones whose signal is gone",
+      "scopes": [
+        "decisions.decision:read",
+        "decisions.decision:write"
+      ]
+    },
+    {
+      "id": "paas-operator",
+      "writers": [
+        "infra/scripts/platform/paas_action.py",
+        "infra/scripts/platform/paas_execute.py"
+      ],
+      "does": "records PaaS change proposals as decisions and claims an approved one before executing it",
+      "scopes": [
+        "decisions.decision:read",
+        "decisions.decision:write"
+      ]
+    },
+    {
+      "id": "decisions-publisher",
+      "writers": [
+        "bookchaowalit/solo-decisions:src/solo_decisions/publisher.py"
+      ],
+      "does": "delivers the decisions outbox to the graph",
+      "scopes": [
+        "graph.decisions:write"
       ]
     }
   ],

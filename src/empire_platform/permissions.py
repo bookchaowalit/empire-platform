@@ -8,8 +8,18 @@ use: ``tasks.task:write`` (create, upsert, general edits), ``tasks.status:write`
 and ``tasks.suggestion:write`` (role suggestions and their review).
 """
 
+DECISIONS_OWNER = (
+    "decisions.decision:read", "decisions.decision:write", "decisions.decision:approve",
+    "decisions.decision:delete", "decisions.review:write", "graph.decisions:write",
+)
+
+# Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
+CELL_OWNERS: dict[str, tuple[str, ...]] = {}
+
 TASKS_OWNER = (
     "tasks.task:read", "tasks.task:write", "tasks.task:delete", "tasks.status:write", "tasks.calendar:write",
     "tasks.link:write", "tasks.archive:write", "tasks.reminder:write", "tasks.occurrence:write",
     "tasks.assignment:write", "tasks.suggestion:write",
 )
+
+CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER)

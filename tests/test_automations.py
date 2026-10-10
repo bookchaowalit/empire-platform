@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from conftest import create_workspace
 from empire_platform.automations import load_registry, provision
 from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import TASKS_OWNER
+from empire_platform.permissions import CELL_OWNERS
 from tasks_api.app import create_app
 from tasks_api.auth import TokenVerifier
 
@@ -40,7 +40,7 @@ OPERATIONS = {
 def env(cluster, tmp_path_factory):
     private_pem, public_pem = key_pair(tmp_path_factory.mktemp("automation-keys"))
     with cluster.connect("platform_api") as conn:
-        ws = create_workspace(conn, f"automations-{uuid.uuid4().hex[:8]}", list(TASKS_OWNER))
+        ws = create_workspace(conn, f"automations-{uuid.uuid4().hex[:8]}", [p for perms in CELL_OWNERS.values() for p in perms])
         conn.commit()
     client = TestClient(create_app(lambda: cluster.connect("tasks_api"), TokenVerifier(public_pem, ISSUER)))
 
@@ -99,7 +99,9 @@ def test_each_automation_can_do_exactly_its_scopes(cluster, env, automation):
         if allowed:
             assert status in (200, 201), (automation["id"], operation, status)
         else:
-            assert status in (403, 409), (automation["id"], operation, status)
+            # Without tasks.task:read the task does not exist for the caller (decision cells' automations).
+            refused = (403, 409) if "tasks.task:read" in automation["scopes"] else (403, 404, 409)
+            assert status in refused, (automation["id"], operation, status)
 
 
 def test_no_automation_can_delete(env):

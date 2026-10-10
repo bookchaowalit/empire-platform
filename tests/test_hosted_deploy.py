@@ -104,6 +104,13 @@ def test_production_tokens(cluster, monkeypatch, tmp_path):
         ws = create_workspace(conn, slug, list(TASKS_OWNER))
         conn.commit()
     monkeypatch.setattr(automations, "default_cluster", lambda: cluster)
+    # Production order: a cell's owner permissions come first, then automations can be delegated them.
+    from empire_platform import cells
+
+    monkeypatch.setattr(cells, "default_cluster", lambda: cluster)
+    assert cells.main(["grant", "--workspace", slug, "--cell", "decisions", "--dry-run"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "decisions"]) == 0
+    assert cells.grant(cluster, ws.id, "decisions") == []  # idempotent
     keys, tokens = tmp_path / "keys", tmp_path / "tokens"
     generate_keys(keys)
     assert automations.main(["provision", "--workspace", slug, "--tokens", str(tokens), "--key-dir", str(keys),
@@ -188,7 +195,9 @@ def test_owner_cli_is_a_registered_automation():
     registry = automations.load_registry()
     owner = next(a for a in registry["automations"] if a["id"] == "owner-cli")
     assert owner["writers"] == ["infra/cli.ts", "infra/scripts/cli/decision-cli.py"]
-    assert set(owner["scopes"]) <= {"tasks.task:read", "tasks.task:write", "tasks.status:write"}
+    assert set(owner["scopes"]) <= {"tasks.task:read", "tasks.task:write", "tasks.status:write",
+                                    "decisions.decision:read", "decisions.decision:write", "decisions.decision:approve",
+                                    "decisions.decision:delete", "decisions.review:write"}
     assert not any("cli" in item["writer"] for item in registry["not_automations"])
 
 

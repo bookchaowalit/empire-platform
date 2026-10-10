@@ -23,6 +23,8 @@ from empire_platform.devdb import REPO_ROOT
 
 KEY_DIR = REPO_ROOT / ".runtime" / "dev-keys"
 ISSUER = "empire-platform-dev"
+# Every token works for every cell API; each API still checks its own audience and asks the PDP.
+DEFAULT_AUDIENCES = ("tasks-api", "graph-api", "platform-api", "decisions-api")
 
 
 def key_pair(directory: Path = KEY_DIR) -> tuple[str, str]:
@@ -57,7 +59,7 @@ def generate_keys(directory: Path) -> Path:
 
 def mint(private_pem: str, *, sub: uuid.UUID, ws: uuid.UUID, delegation: uuid.UUID | None = None,
          obo: uuid.UUID | None = None, act: uuid.UUID | None = None, ttl: int = 600,
-         issuer: str = ISSUER, audience: str | list[str] = ("tasks-api", "graph-api")) -> str:
+         issuer: str = ISSUER, audience: str | list[str] = DEFAULT_AUDIENCES) -> str:
     now = int(time.time())
     aud = audience if isinstance(audience, str) else list(audience)
     claims: dict = {"iss": issuer, "aud": aud, "sub": str(sub), "ws": str(ws), "iat": now,
