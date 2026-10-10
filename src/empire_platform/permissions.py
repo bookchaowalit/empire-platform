@@ -67,6 +67,29 @@ ACCOUNTS_OWNER = tuple(
     for right in ("read", "write", "delete")
 )
 
+OPERATING_OWNER = (
+    "operating.cycle:read", "operating.cycle:write", "operating.cycle:delete",
+    "operating.cycle-task:read", "operating.cycle-task:write", "operating.cycle-task:delete",
+    "operating.cycle-goal-link:read", "operating.cycle-goal-link:write", "operating.cycle-goal-link:delete",
+    "operating.cycle-review:read", "operating.cycle-review:write", "operating.cycle-review:delete",
+    "operating.kpi:read", "operating.kpi:write", "operating.kpi:delete",
+    "operating.kpi-measurement:read", "operating.kpi-measurement:write", "operating.kpi-measurement:delete",
+    "graph.operating:write",
+)
+
+INTAKE_OWNER = (
+    "intake.source:read", "intake.source:write", "intake.source:delete",
+    "intake.intake:read", "intake.intake:write", "intake.intake:delete",
+    "intake.intake-event:read", "intake.intake-event:write", "intake.intake-event:delete",
+)
+
+AUTOMATION_OWNER = (
+    "automation.cron-job:read", "automation.cron-job:write", "automation.cron-job:delete",
+    "automation.automation-rule:read", "automation.automation-rule:write", "automation.automation-rule:delete",
+    "automation.workflow-pipeline:read", "automation.workflow-pipeline:write", "automation.workflow-pipeline:delete",
+    "automation.automation-log:read", "automation.automation-log:write", "automation.automation-log:delete",
+)
+
 # Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
 CELL_OWNERS: dict[str, tuple[str, ...]] = {}
 
@@ -79,4 +102,5 @@ TASKS_OWNER = (
 CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_OWNER,
                    notifications=NOTIFICATIONS_OWNER, goals=GOALS_OWNER, projects=PROJECTS_OWNER)
 CELL_OWNERS["roles-skills"] = ROLES_SKILLS_OWNER
+CELL_OWNERS.update(operating=OPERATING_OWNER, intake=INTAKE_OWNER, automation=AUTOMATION_OWNER)
 CELL_OWNERS["accounts"] = ACCOUNTS_OWNER
