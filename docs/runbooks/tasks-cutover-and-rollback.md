@@ -49,10 +49,14 @@ reports `ok`, `warn`, or `breach`:
 | Tasks API health check failing | at once | > 30 min |
 | Write switch off | yes | — |
 | Cross-workspace attempts denied in 24 h | any | — |
+| Cell execution still running (lost finish call) | > 15 min | > 24 h |
+| Automation token in `~/.config/empire-platform/tokens` | expires within 7 days | expired |
 
 In Solo Empire, `task tasks:platform:monitor` (infra) runs the check and sends
 one Telegram message through the existing alert channel on `warn` or
 `breach`. A breach is a signal; the owner decides whether to roll back.
+The cell-execution and token signals are not rollback criteria; reconcile or
+rotate per `docs/runbooks/cell-executions-and-tokens.md`.
 Not covered yet: the Tasks API 5xx rate needs request metrics from the
 hosted runtime.
 

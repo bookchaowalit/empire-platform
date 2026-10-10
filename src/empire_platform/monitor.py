@@ -12,16 +12,22 @@ one and reports every check as ``ok``, ``warn``, or ``breach``:
 - write switch off (warn: the cutover is paused)
 - Tasks API down: warn at once, breach after 30 min
 - workspace mismatches in authorization decisions (warn; RLS still holds)
+- cell executions still running: after 15 min (warn) / 24 h (breach); the
+  cell's finish call was lost, see docs/runbooks/cell-executions-and-tokens.md
+- automation tokens in the token directory expiring within 7 days (warn) or
+  expired (breach); only the ``exp`` and ``iat`` claims are read
 
 Exit code 0 when all checks pass, 1 for a warning, 2 for a breach.
 
-    empire-monitor [--api http://127.0.0.1:3601] [--json]
+    empire-monitor [--api http://127.0.0.1:3601] [--tokens DIR] [--json]
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -41,6 +47,13 @@ OUTBOX_BREACH = timedelta(minutes=60)
 GRAPH_LAG = timedelta(minutes=60)
 API_DOWN_BREACH = timedelta(minutes=30)
 RETRY_WARN = 3
+CELL_RUNNING_WARN = timedelta(minutes=15)
+CELL_RUNNING_BREACH = timedelta(hours=24)
+TOKEN_WARN = timedelta(days=7)
+# Tokens minted for at most a day (owner-token is one hour) expire by design and are skipped.
+SHORT_LIVED = timedelta(days=1)
+MAX_EXP = 253402300799  # 9999-12-31T23:59:59Z; anything later is not a real expiry
+TOKEN_DIR = Path(os.environ.get("EMPIRE_TOKENS_DIR", Path.home() / ".config" / "empire-platform" / "tokens"))
 LEVELS = {"ok": 0, "warn": 1, "breach": 2}
 
 
@@ -78,6 +91,16 @@ def snapshot(cluster: Cluster, dbname: str = "empire") -> dict[str, Any]:
         mismatches = conn.execute(
             "SELECT count(*) AS n FROM platform.authorization_decisions"
             " WHERE reason = 'workspace_mismatch' AND decided_at > now() - interval '1 day'").fetchone()["n"]
+        cells = {
+            row["service"]: {"running_warn": row["warn"], "running_breach": row["breach"]}
+            for row in conn.execute(
+                "SELECT b.service, count(*) FILTER (WHERE e.started_at < now() - %s::interval) AS warn,"
+                " count(*) FILTER (WHERE e.started_at < now() - %s::interval) AS breach"
+                " FROM platform.cell_executions b JOIN platform.executions e ON e.id = b.execution_id"
+                " WHERE e.status = 'running' GROUP BY b.service",
+                (f"{int(CELL_RUNNING_WARN.total_seconds())} seconds",
+                 f"{int(CELL_RUNNING_BREACH.total_seconds())} seconds"))
+        }
         now = conn.execute("SELECT now() AS now").fetchone()["now"]
     return {
         "taken_at": now.isoformat(),
@@ -87,7 +110,33 @@ def snapshot(cluster: Cluster, dbname: str = "empire") -> dict[str, Any]:
                    "graph_lagging": lagging},
         "writes_enabled": bool(writes and writes["value"] == "true"),
         "workspace_mismatch_denials_24h": mismatches,
+        "cell_executions": cells,
     }
+
+
+def token_expiries(directory: Path | None) -> dict[str, int | None]:
+    """The ``exp`` claim of each long-lived ``*.jwt`` file, ``None`` when unreadable.
+
+    The signature is not checked and no other claim leaves this function; the
+    token itself is never logged or returned.
+    """
+    if directory is None or not directory.is_dir():
+        return {}
+    expiries: dict[str, int | None] = {}
+    for path in sorted(directory.glob("*.jwt")):
+        try:
+            part = path.read_text(encoding="utf-8").strip().split(".")[1]
+            claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+            exp, iat = int(claims["exp"]), int(claims.get("iat") or 0)
+            if not 0 < exp <= MAX_EXP:
+                raise ValueError("exp out of range")
+        except (OSError, IndexError, KeyError, TypeError, ValueError, OverflowError):
+            expiries[path.stem] = None
+            continue
+        if iat and exp - iat <= SHORT_LIVED.total_seconds():
+            continue
+        expiries[path.stem] = exp
+    return expiries
 
 
 def probe(api: str | None, timeout: float = 5.0) -> bool | None:
@@ -136,6 +185,24 @@ def evaluate(current: dict[str, Any], previous: dict[str, Any] | None, api_up: b
         findings.append(Finding("workspace_mismatch_attempts", "warn",
                                 f"{current['workspace_mismatch_denials_24h']} cross-workspace attempts denied in 24 h"))
 
+    for service, counts in sorted(current.get("cell_executions", {}).items()):
+        if counts.get("running_breach"):
+            findings.append(Finding("cell_executions_stuck", "breach",
+                                    f"{counts['running_breach']} {service} executions running over 24 h"))
+        elif counts.get("running_warn"):
+            findings.append(Finding("cell_executions_stuck", "warn",
+                                    f"{counts['running_warn']} {service} executions running over 15 min"))
+
+    for name, exp in sorted(current.get("tokens", {}).items()):
+        if exp is None:
+            findings.append(Finding("token_unreadable", "warn", f"token file {name} has no readable exp claim"))
+            continue
+        left = datetime.fromtimestamp(exp, timezone.utc) - now
+        if left <= timedelta(0):
+            findings.append(Finding("token_expired", "breach", f"token {name} expired {-left} ago; rotate it"))
+        elif left <= TOKEN_WARN:
+            findings.append(Finding("token_expiring", "warn", f"token {name} expires in {left}; rotate it"))
+
     down_since = None
     if api_up is False:
         down_since = api_down_since or now.isoformat()
@@ -145,11 +212,13 @@ def evaluate(current: dict[str, Any], previous: dict[str, Any] | None, api_up: b
     return findings, down_since
 
 
-def run(cluster: Cluster, api: str | None, state_dir: Path = STATE_DIR) -> dict[str, Any]:
+def run(cluster: Cluster, api: str | None, state_dir: Path = STATE_DIR,
+        tokens_dir: Path | None = None) -> dict[str, Any]:
     state_dir.mkdir(parents=True, exist_ok=True)
     state_path = state_dir / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     current = snapshot(cluster)
+    current["tokens"] = token_expiries(tokens_dir)
     now = datetime.now(timezone.utc)
     findings, down_since = evaluate(current, state.get("snapshot"), probe(api), state.get("api_down_since"), now)
     level = max((f.level for f in findings), key=LEVELS.__getitem__, default="ok")
@@ -163,9 +232,11 @@ def run(cluster: Cluster, api: str | None, state_dir: Path = STATE_DIR) -> dict[
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="empire-monitor", description=__doc__.splitlines()[0])
     parser.add_argument("--api", help="Tasks API base URL to health-check")
+    parser.add_argument("--tokens", type=Path, default=TOKEN_DIR,
+                        help="automation token directory to check for expiry (default: %(default)s)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    report = run(default_cluster(), args.api)
+    report = run(default_cluster(), args.api, tokens_dir=args.tokens)
     if args.json:
         print(json.dumps(report, indent=2))
     else:
