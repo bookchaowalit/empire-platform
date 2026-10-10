@@ -13,6 +13,11 @@ DECISIONS_OWNER = (
     "decisions.decision:delete", "decisions.review:write", "graph.decisions:write",
 )
 
+HABITS_OWNER = (
+    "habits.habit:read", "habits.habit:write", "habits.habit:delete",
+    "habits.routine:read", "habits.routine:write", "habits.routine:delete", "graph.habits:write",
+)
+
 # Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
 CELL_OWNERS: dict[str, tuple[str, ...]] = {}
 
@@ -22,4 +27,4 @@ TASKS_OWNER = (
     "tasks.assignment:write", "tasks.suggestion:write",
 )
 
-CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER)
+CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_OWNER)

@@ -1,6 +1,6 @@
 {
   "contract": "urn:empire:contracts:automations:v1",
-  "description": "Automation identities for the Solo Empire task and decision writers. Scopes come from what each writer actually does (SQLite statements audited 2026-10-09); a writer never gets the workspace owner's full rights.",
+  "description": "Automation identities for the Solo Empire task, decision and habit writers. Scopes come from what each writer actually does (SQLite statements audited 2026-10-09); a writer never gets the workspace owner's full rights.",
   "delegation_days": 30,
   "automations": [
     {
@@ -184,6 +184,8 @@
       "does": "reads tasks and counts for briefings, diaries, digests, alerts, and status reports",
       "scopes": [
         "decisions.decision:read",
+        "habits.habit:read",
+        "habits.routine:read",
         "tasks.task:read"
       ]
     },
@@ -201,6 +203,8 @@
       "does": "reads tasks, links, assignments, and suggestions to check integrity rules",
       "scopes": [
         "decisions.decision:read",
+        "habits.habit:read",
+        "habits.routine:read",
         "tasks.task:read"
       ]
     },
@@ -244,6 +248,8 @@
       "does": "serves task lists and counts to the local dashboard and the legacy MCP stats tools",
       "scopes": [
         "decisions.decision:read",
+        "habits.habit:read",
+        "habits.routine:read",
         "tasks.task:read"
       ]
     },
@@ -290,7 +296,9 @@
       "id": "owner-cli",
       "writers": [
         "infra/cli.ts",
-        "infra/scripts/cli/decision-cli.py"
+        "infra/scripts/cli/decision-cli.py",
+        "infra/scripts/cli/habit-tracker.py",
+        "infra/scripts/cli/routines-cli.py"
       ],
       "does": "the owner's human CLIs (tasks add/done/update/list, decision review completion); read, create, update, and complete tasks; no archive, link, assignment, or delete",
       "scopes": [
@@ -299,6 +307,10 @@
         "decisions.decision:read",
         "decisions.decision:write",
         "decisions.review:write",
+        "habits.habit:read",
+        "habits.habit:write",
+        "habits.routine:read",
+        "habits.routine:write",
         "tasks.status:write",
         "tasks.task:read",
         "tasks.task:write"
@@ -335,6 +347,39 @@
       "does": "delivers the decisions outbox to the graph",
       "scopes": [
         "graph.decisions:write"
+      ]
+    },
+    {
+      "id": "habit-autolog",
+      "writers": [
+        "infra/scripts/utils/weekly_habit_autogranted.py",
+        "infra/scripts/utils/habit_auto_detect.py"
+      ],
+      "does": "logs habit days granted by the weekly batch or detected from the calendar",
+      "scopes": [
+        "habits.habit:read",
+        "habits.habit:write"
+      ]
+    },
+    {
+      "id": "strava-sync",
+      "writers": [
+        "infra/scripts/sync/sync_strava.py"
+      ],
+      "does": "logs exercise habit days from Strava activities",
+      "scopes": [
+        "habits.habit:read",
+        "habits.habit:write"
+      ]
+    },
+    {
+      "id": "habits-publisher",
+      "writers": [
+        "bookchaowalit/solo-habits:src/solo_habits/publisher.py"
+      ],
+      "does": "delivers the habits outbox to the graph",
+      "scopes": [
+        "graph.habits:write"
       ]
     }
   ],

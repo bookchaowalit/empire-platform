@@ -111,6 +111,7 @@ def test_production_tokens(cluster, monkeypatch, tmp_path):
     assert cells.main(["grant", "--workspace", slug, "--cell", "decisions", "--dry-run"]) == 0
     assert cells.main(["grant", "--workspace", slug, "--cell", "decisions"]) == 0
     assert cells.grant(cluster, ws.id, "decisions") == []  # idempotent
+    assert cells.main(["grant", "--workspace", slug, "--cell", "habits"]) == 0
     keys, tokens = tmp_path / "keys", tmp_path / "tokens"
     generate_keys(keys)
     assert automations.main(["provision", "--workspace", slug, "--tokens", str(tokens), "--key-dir", str(keys),
@@ -194,10 +195,13 @@ def test_hosted_refuses_the_dev_public_key():
 def test_owner_cli_is_a_registered_automation():
     registry = automations.load_registry()
     owner = next(a for a in registry["automations"] if a["id"] == "owner-cli")
-    assert owner["writers"] == ["infra/cli.ts", "infra/scripts/cli/decision-cli.py"]
+    assert owner["writers"] == ["infra/cli.ts", "infra/scripts/cli/decision-cli.py",
+                                "infra/scripts/cli/habit-tracker.py", "infra/scripts/cli/routines-cli.py"]
     assert set(owner["scopes"]) <= {"tasks.task:read", "tasks.task:write", "tasks.status:write",
                                     "decisions.decision:read", "decisions.decision:write", "decisions.decision:approve",
-                                    "decisions.decision:delete", "decisions.review:write"}
+                                    "decisions.decision:delete", "decisions.review:write",
+                                    "habits.habit:read", "habits.habit:write", "habits.routine:read",
+                                    "habits.routine:write"}
     assert not any("cli" in item["writer"] for item in registry["not_automations"])
 
 
