@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import threading
+import time
 import uuid
 
 import psycopg
@@ -162,6 +165,63 @@ def test_out_of_order_and_duplicate_events_converge(cluster, gworld):
     assert consumer(event(gworld.ws, "tasks.task.created", ghost, {"version": 1, "deleted": False, "title": "Ghost"})) == "stale"
 
 
+def ingest_racing_a_newer_event(cluster, ws, newer, older):
+    """Leave ``newer`` uncommitted, ingest ``older`` from a second connection
+    until it blocks on the node's key, then commit ``newer``."""
+    result = {}
+
+    def ingest(conn, evt):
+        conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(ws),))
+        return conn.execute("SELECT graph.ingest_event(%s::jsonb)", (json.dumps(evt),)).fetchone()[0]
+
+    def second():
+        with cluster.connect("graph_api") as conn:
+            result["older"] = ingest(conn, older)
+
+    with cluster.connect("graph_api") as first:
+        result["newer"] = ingest(first, newer)
+        worker = threading.Thread(target=second)
+        worker.start()
+        deadline = time.monotonic() + 10
+        while not superuser(cluster, "SELECT 1 FROM pg_stat_activity WHERE usename = 'graph_api'"
+                                     " AND wait_event_type = 'Lock'"):
+            assert time.monotonic() < deadline, "the older event never waited for the newer one"
+            time.sleep(0.02)
+        first.commit()
+    worker.join(10)
+    return result
+
+
+def test_older_event_for_a_new_subject_never_overwrites_a_concurrent_newer_one(cluster, gworld):
+    subject = f"empire:tasks:task:{uuid.uuid4()}"
+    v1 = event(gworld.ws, "tasks.task.created", subject, {"version": 1, "deleted": False, "title": "First"})
+    v2 = event(gworld.ws, "tasks.task.updated", subject, {"version": 2, "deleted": False, "title": "Second"})
+    assert ingest_racing_a_newer_event(cluster, gworld.ws, v2, v1) == {"newer": "node", "older": "stale"}
+    assert superuser(cluster, "SELECT label, lifecycle, version FROM graph.nodes WHERE urn = %s",
+                     (subject,)) == [("Second", "active", 2)]
+
+
+def test_older_deletion_for_a_new_subject_neither_deletes_nor_retracts(cluster, gworld):
+    subject = f"empire:tasks:task:{uuid.uuid4()}"
+    linked = event(gworld.ws, "tasks.task.linked", subject,
+                   {"version": 2, "deleted": False, "title": "Kept", "relation": "supports-goal",
+                    "target_type": "goal", "target_ref": gworld.goal})
+    deleted = event(gworld.ws, "tasks.task.deleted", subject, {"version": 1, "deleted": True})
+    assert ingest_racing_a_newer_event(cluster, gworld.ws, linked, deleted) == {"newer": "edge", "older": "stale"}
+    assert superuser(cluster, "SELECT label, lifecycle, version FROM graph.nodes WHERE urn = %s",
+                     (subject,)) == [("Kept", "active", 2)]
+    assert superuser(cluster, "SELECT retracted_at FROM graph.edges WHERE from_urn = %s", (subject,)) == [(None,)]
+
+
+def test_older_update_never_revives_a_concurrent_newer_deletion(cluster, gworld):
+    subject = f"empire:tasks:task:{uuid.uuid4()}"
+    deleted = event(gworld.ws, "tasks.task.deleted", subject, {"version": 2, "deleted": True})
+    v1 = event(gworld.ws, "tasks.task.created", subject, {"version": 1, "deleted": False, "title": "Ghost"})
+    assert ingest_racing_a_newer_event(cluster, gworld.ws, deleted, v1) == {"newer": "deleted", "older": "stale"}
+    assert superuser(cluster, "SELECT label, lifecycle, version FROM graph.nodes WHERE urn = %s",
+                     (subject,)) == [(None, "deleted", 2)]
+
+
 def test_unregistered_relation_endpoints_are_rejected(cluster, gworld):
     consumer = GraphConsumer(lambda: cluster.connect("graph_api"))
     subject = f"empire:tasks:task:{uuid.uuid4()}"
@@ -177,7 +237,7 @@ def test_ingest_refuses_an_event_for_another_workspace(cluster, gworld):
         conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(gworld.beta),))
         bad = event(gworld.ws, "tasks.task.created", f"empire:tasks:task:{uuid.uuid4()}", {"version": 1, "title": "x"})
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("SELECT graph.ingest_event(%s::jsonb)", (__import__("json").dumps(bad),))
+            conn.execute("SELECT graph.ingest_event(%s::jsonb)", (json.dumps(bad),))
 
 
 def test_graph_and_publisher_roles_are_least_privilege(cluster):
