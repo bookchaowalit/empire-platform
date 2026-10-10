@@ -207,7 +207,11 @@ def test_owner_cli_is_a_registered_automation():
                                      "infra/scripts/cli/habit-tracker.py", "infra/scripts/cli/routines-cli.py",
                                      "infra/scripts/cli/goals-cli.py", "infra/scripts/cli/projects-cli.py",
                                      "infra/scripts/cli/skills-cli.py", "infra/scripts/learning/learning_evidence.py",
-                                     "infra/scripts/sync/sync-github.ts", "infra/scripts/utils/update-skills.ts"}
+                                     "infra/scripts/sync/sync-github.ts", "infra/scripts/utils/update-skills.ts",
+                                     "infra/scripts/cli/data-intake-cli.py", "infra/scripts/cli/diary-intake-cli.py",
+                                     "infra/scripts/cli/finance-intake-cli.py", "infra/scripts/cli/finance-review-cli.py",
+                                     "infra/scripts/cli/finance-record-cli.py",
+                                     "infra/scripts/workflows/finance_historical_recovery.py"}
     assert set(owner["scopes"]) <= {"tasks.task:read", "tasks.task:write", "tasks.status:write",
                                     "decisions.decision:read", "decisions.decision:write", "decisions.decision:approve",
                                     "decisions.decision:delete", "decisions.review:write",
@@ -218,7 +222,9 @@ def test_owner_cli_is_a_registered_automation():
                                     "goals.goal-task:write", "projects.project:read", "projects.project:write",
                                     "projects.project-repo:read", "projects.project-repo:write",
                                     "roles-skills.skill:read", "roles-skills.skill:write",
-                                    "roles-skills.skill-category:read"}
+                                    "roles-skills.skill-category:read",
+                                    "intake.source:read", "intake.source:write", "intake.intake:read",
+                                    "intake.intake:write", "intake.intake-event:write"}
     assert not any("cli" in item["writer"] for item in registry["not_automations"])
 
 
