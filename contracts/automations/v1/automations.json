@@ -36,11 +36,14 @@
       ],
       "does": "creates or updates review tasks from the Gmail review queue; links the review task to its goal and project, assigns the owner role, suggests the role",
       "scopes": [
-        "tasks.task:read",
-        "tasks.task:write",
-        "tasks.link:write",
+        "roles-skills.personal-role-task-link:read",
+        "roles-skills.personal-role-task-link:write",
+        "roles-skills.personal-role:read",
         "tasks.assignment:write",
-        "tasks.suggestion:write"
+        "tasks.link:write",
+        "tasks.suggestion:write",
+        "tasks.task:read",
+        "tasks.task:write"
       ]
     },
     {
@@ -87,6 +90,9 @@
       ],
       "does": "appends practice evidence to task notes and may move a task to in_progress",
       "scopes": [
+        "roles-skills.role-skill-link:read",
+        "roles-skills.skill:read",
+        "roles-skills.skill:write",
         "tasks.task:read",
         "tasks.task:write"
       ]
@@ -94,6 +100,7 @@
     {
       "id": "portfolio-seeder",
       "writers": [
+        "infra/mcp-server/src/scripts/seed-db.ts",
         "infra/scripts/db/seed_finance_roadmap.py",
         "infra/scripts/utils/autonomous_portfolio_seed.py",
         "infra/scripts/utils/portfolio_context_seed.py",
@@ -245,10 +252,12 @@
         "roles-skills.personal-role:write",
         "roles-skills.role-goal-link:read",
         "roles-skills.role-goal-link:write",
+        "roles-skills.role-path-step:delete",
         "roles-skills.role-path-step:read",
         "roles-skills.role-path-step:write",
         "roles-skills.role-project-allocation:read",
         "roles-skills.role-project-allocation:write",
+        "roles-skills.role-skill-link:delete",
         "roles-skills.role-skill-link:read",
         "roles-skills.role-skill-link:write",
         "roles-skills.skill-category:read",
@@ -374,6 +383,7 @@
       "scopes": [
         "goals.goal-context-link:read",
         "goals.goal-metric:read",
+        "goals.goal-metric:write",
         "goals.goal-portfolio-mapping:read",
         "goals.goal-project-link:read",
         "goals.goal-task-project-link:read",
@@ -417,9 +427,10 @@
     {
       "id": "dashboard-api",
       "readers": [
+        "infra/api/server.ts",
         "infra/dashboard/server.ts",
-        "infra/mcp-server/src/tools/performance.ts",
-        "infra/mcp-server/src/tools/customization.ts"
+        "infra/mcp-server/src/tools/customization.ts",
+        "infra/mcp-server/src/tools/performance.ts"
       ],
       "does": "serves task lists and counts to the local dashboard and the legacy MCP stats tools",
       "scopes": [
@@ -512,6 +523,10 @@
     {
       "id": "legacy-mcp",
       "writers": [
+        "infra/mcp-server/src/tools/ai-conversations.ts",
+        "infra/mcp-server/src/tools/dashboard.ts",
+        "infra/mcp-server/src/tools/goals.ts",
+        "infra/mcp-server/src/tools/skills.ts",
         "infra/mcp-server/src/tools/tasks.ts"
       ],
       "does": "the Solo Empire MCP task tools used by agents for the owner; delete_task archives instead of deleting",
@@ -519,6 +534,13 @@
         "decisions.decision:approve",
         "decisions.decision:read",
         "decisions.decision:write",
+        "goals.goal-task:read",
+        "goals.goal:read",
+        "goals.goal:write",
+        "projects.project:read",
+        "roles-skills.skill-category:read",
+        "roles-skills.skill:read",
+        "roles-skills.skill:write",
         "tasks.archive:write",
         "tasks.status:write",
         "tasks.task:read",
@@ -530,8 +552,14 @@
       "writers": [
         "infra/cli.ts",
         "infra/scripts/cli/decision-cli.py",
+        "infra/scripts/cli/goals-cli.py",
         "infra/scripts/cli/habit-tracker.py",
-        "infra/scripts/cli/routines-cli.py"
+        "infra/scripts/cli/projects-cli.py",
+        "infra/scripts/cli/routines-cli.py",
+        "infra/scripts/cli/skills-cli.py",
+        "infra/scripts/learning/learning_evidence.py",
+        "infra/scripts/sync/sync-github.ts",
+        "infra/scripts/utils/update-skills.ts"
       ],
       "does": "the owner's human CLIs (tasks add/done/update/list, decision review completion); read, create, update, and complete tasks; no archive, link, assignment, or delete",
       "scopes": [
@@ -540,6 +568,10 @@
         "decisions.decision:read",
         "decisions.decision:write",
         "decisions.review:write",
+        "goals.goal-task:read",
+        "goals.goal-task:write",
+        "goals.goal:read",
+        "goals.goal:write",
         "habits.habit:read",
         "habits.habit:write",
         "habits.routine:read",
@@ -548,6 +580,13 @@
         "notifications.notification:write",
         "notifications.rule:read",
         "notifications.rule:write",
+        "projects.project-repo:read",
+        "projects.project-repo:write",
+        "projects.project:read",
+        "projects.project:write",
+        "roles-skills.skill-category:read",
+        "roles-skills.skill:read",
+        "roles-skills.skill:write",
         "tasks.status:write",
         "tasks.task:read",
         "tasks.task:write"
@@ -561,7 +600,8 @@
       "does": "proposes and refreshes decision records from signals, and clears ones whose signal is gone",
       "scopes": [
         "decisions.decision:read",
-        "decisions.decision:write"
+        "decisions.decision:write",
+        "goals.goal:read"
       ]
     },
     {
