@@ -8,6 +8,8 @@ dependencies = [
     "fastapi>=0.115,<1",
     "pyjwt[crypto]>=2.10,<3",
     "uvicorn>=0.30,<1",
+    "httpx>=0.27,<1",
+    "mcp>=2.3,<3",  # empire-mcp (stdio and hosted Streamable HTTP)
 ]
 
 [project.optional-dependencies]
@@ -20,6 +22,7 @@ empire-dev-token = "empire_platform.devtoken:main"
 tasks-api = "tasks_api.app:main"
 empire-contracts = "empire_platform.contracts:main"
 empire-mcp = "empire_mcp.server:main"
+empire-mcp-http = "empire_mcp.hosted:main"
 empire-automations = "empire_platform.automations:main"
 empire-publish = "tasks_api.publisher:main"
 empire-monitor = "empire_platform.monitor:main"

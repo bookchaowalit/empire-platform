@@ -103,14 +103,29 @@ class StrictMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
-def build_server(tasks: httpx.Client, graph: httpx.Client, token: Callable[[], str],
-                 exchange: Callable[[str, str], str] | None = None) -> StrictMCPServer:
-    """``exchange(subject_token, audience)`` swaps the caller's token for a per-cell one when given."""
-    server = StrictMCPServer("empire", instructions="Solo Empire tasks and graph. Acts as the authenticated caller only.")
+def build_server(tasks: httpx.Client, graph: httpx.Client | None, token: Callable[[], str] | None,
+                 exchange: Callable[[str, str], str] | None = None, *,
+                 mint: Callable[[str], str] | None = None, server: StrictMCPServer | None = None) -> StrictMCPServer:
+    """Register the tools on ``server`` (a new stdio-style server by default).
+
+    The bearer for each cell call comes from exactly one source: ``mint(audience)``
+    (hosted mode: a fresh token for the authenticated caller), else
+    ``exchange(token(), audience)``, else ``token()``. Without ``graph`` the
+    graph tools are not registered.
+    """
+    if server is None:
+        server = StrictMCPServer("empire",
+                                 instructions="Solo Empire tasks and graph. Acts as the authenticated caller only.")
+
+    def bearer_for(audience: str) -> str:
+        if mint is not None:
+            return mint(audience)
+        assert token is not None, "build_server needs token or mint"
+        return token() if exchange is None else exchange(token(), audience)
 
     def call(client: httpx.Client, method: str, path: str, **kwargs: Any) -> Any:
         # One correlation ID per tool call, carried through API, outbox, and graph.
-        bearer = token() if exchange is None else exchange(token(), "tasks-api" if client is tasks else "graph-api")
+        bearer = bearer_for("tasks-api" if client is tasks else "graph-api")
         headers = {"Authorization": f"Bearer {bearer}", "X-Empire-Channel": "mcp",
                    "X-Correlation-Id": f"mcp-{uuid.uuid4().hex}"}
         response = client.request(method, path, headers=headers, **kwargs)
@@ -159,6 +174,9 @@ def build_server(tasks: httpx.Client, graph: httpx.Client, token: Callable[[], s
     def tasks_link(task_id: str, relation: str, target_type: str, target_ref: str) -> dict:
         return call(tasks, "POST", f"/v1/tasks/{task_id}/links",
                     json={"relation": relation, "target_type": target_type, "target_ref": target_ref})
+
+    if graph is None:
+        return server
 
     @tool("graph.search", SearchArgs, "Find entities the caller may see by label.")
     def graph_search(query: str, limit: int = 20) -> dict:

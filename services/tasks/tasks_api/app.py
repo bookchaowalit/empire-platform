@@ -37,6 +37,7 @@ from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
 
 from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
+from empire_platform.token_exchange import MCP_ISSUER
 from tasks_api.auth import HARD_MAX_LIFETIME_SECONDS, Principal, TokenVerifier, Unauthenticated
 
 Status = Literal["todo", "in_progress", "done", "blocked", "cancelled"]
@@ -344,6 +345,11 @@ def to_task(row: dict[str, Any]) -> Task:
                 **{k: row[k] for k in TASK_COLUMNS if k != "legacy_id"})
 
 
+def external_actor(caller: Principal) -> dict[str, str]:
+    """The OAuth subject behind an MCP-issued token (``clerk:<user id>``); an ID, never a token."""
+    return {"external_actor": caller.external_actor} if caller.external_actor else {}
+
+
 def audit_log(**fields: Any) -> None:
     """One structured line per write decision; IDs and codes only, never content."""
     log.info(json.dumps({"correlation_id": correlation_id.get(), **fields}, default=str, sort_keys=True))
@@ -490,7 +496,7 @@ def create_app(
                     decision = type(decision)("deny", "delegation_invalid", decision.decision_id)
                 status = 409 if decision.decision == "require_approval" else 403
                 audit_log(event="tasks.write.denied", action=request.action, reason=decision.reason,
-                          actor=caller.actor, workspace=caller.workspace)
+                          actor=caller.actor, workspace=caller.workspace, **external_actor(caller))
                 raise HTTPException(status_code=status, detail={"error": decision.decision,
                                                                 "reason": decision.reason}) from denied
             try:
@@ -502,7 +508,7 @@ def create_app(
             conn.execute("SELECT platform.finish_execution(%s, 'succeeded')", (execution,))
             conn.commit()
             audit_log(event="tasks.write", action=request.action, execution=execution,
-                      actor=caller.actor, workspace=caller.workspace)
+                      actor=caller.actor, workspace=caller.workspace, **external_actor(caller))
 
     def emit(conn: psycopg.Connection, caller: Principal, execution: uuid.UUID, event: str,
              task_id: uuid.UUID, before: dict | None, after: dict | None, extra: dict | None = None) -> None:
@@ -1226,6 +1232,9 @@ class ServerConfig:
     host: str
     port: int
     max_lifetime: int = 3600
+    mcp_issuer: str | None = None  # set together with mcp_public_key_pem when the hosted MCP server is trusted
+    mcp_public_key_pem: str | None = None
+    mcp_subjects: frozenset[tuple[uuid.UUID, uuid.UUID]] | None = None
 
 
 def server_config(env: Mapping[str, str] | None = None) -> ServerConfig:
@@ -1244,7 +1253,39 @@ def server_config(env: Mapping[str, str] | None = None) -> ServerConfig:
     lifetime = int(env.get("TASKS_API_JWT_MAX_LIFETIME_SECONDS") or (HOSTED_MAX_LIFETIME if hosted else 3600))
     if not 0 < lifetime <= HARD_MAX_LIFETIME_SECONDS:
         raise SystemExit(f"TASKS_API_JWT_MAX_LIFETIME_SECONDS must be between 1 and {HARD_MAX_LIFETIME_SECONDS}")
-    return ServerConfig(pem, issuer, env.get("TASKS_API_HOST") or "127.0.0.1", port, lifetime)
+    mcp_issuer, mcp_pem = _mcp_trust(env, hosted, issuer, pem)
+    # Ignored while MCP trust is off, so unsetting the key alone always cuts MCP off.
+    mcp_subjects = _mcp_subjects(env.get("TASKS_API_MCP_SUBJECTS")) if mcp_pem else None
+    return ServerConfig(pem, issuer, env.get("TASKS_API_HOST") or "127.0.0.1", port, lifetime, mcp_issuer, mcp_pem,
+                        mcp_subjects)
+
+
+def _mcp_subjects(raw: str | None) -> frozenset[tuple[uuid.UUID, uuid.UUID]] | None:
+    """TASKS_API_MCP_SUBJECTS: JSON list of {"sub": identity uuid, "ws": workspace uuid}; unset = no extra gate."""
+    if raw is None or not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, list) or not all(isinstance(e, dict) and set(e) == {"sub", "ws"} for e in data):
+            raise ValueError
+        return frozenset((uuid.UUID(str(e["sub"])), uuid.UUID(str(e["ws"]))) for e in data)
+    except ValueError as exc:  # JSONDecodeError is a ValueError
+        raise SystemExit('TASKS_API_MCP_SUBJECTS must be a JSON list of {"sub": uuid, "ws": uuid}') from exc
+
+
+def _mcp_trust(env: Mapping[str, str], hosted: bool, issuer: str, pem: str) -> tuple[str | None, str | None]:
+    """The hosted MCP issuer is trusted only when its own public key is configured."""
+    mcp_pem = env.get("TASKS_API_MCP_PUBLIC_KEY_PEM", "").strip()
+    if not mcp_pem:
+        return None, None
+    mcp_issuer = env.get("TASKS_API_TRUSTED_MCP_ISSUER") or MCP_ISSUER
+    if mcp_issuer in (issuer, DEV_ISSUER):
+        raise SystemExit("TASKS_API_TRUSTED_MCP_ISSUER must differ from the main and the dev issuer")
+    if _pem_digest(mcp_pem) == _pem_digest(pem):
+        raise SystemExit("the MCP public key must differ from the main public key")
+    if hosted and _pem_digest(mcp_pem) == _dev_key_digest():
+        raise SystemExit("hosted mode refuses the dev public key for MCP")
+    return mcp_issuer, mcp_pem
 
 
 def main() -> None:
@@ -1253,7 +1294,9 @@ def main() -> None:
     from empire_platform.devdb import default_cluster
 
     config = server_config()
-    verifier = TokenVerifier(config.public_key_pem, config.issuer, max_lifetime=config.max_lifetime)
+    verifier = TokenVerifier(config.public_key_pem, config.issuer, max_lifetime=config.max_lifetime,
+                             mcp_issuer=config.mcp_issuer, mcp_public_key_pem=config.mcp_public_key_pem,
+                             mcp_subjects=config.mcp_subjects)
     cluster = default_cluster()
     app = create_app(lambda: cluster.connect("tasks_api"), verifier)
     uvicorn.run(app, host=config.host, port=config.port)

@@ -47,7 +47,7 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 | `src/empire_platform/tasks_import.py` | read-only SQLite snapshot import with full verification; dry run by default |
 | `services/tasks/tasks_api/publisher.py` | outbox publisher (`tasks_publisher` role): oldest first, retry with backoff, at least once |
 | `services/graph/` | graph schema (nodes, aliases, edges, relation types, consents, inbox), event consumer, and the read API |
-| `services/mcp/empire_mcp/` | MCP tools `tasks.*` and `graph.*` that call the APIs with the caller's token and reject unknown arguments |
+| `services/mcp/empire_mcp/` | MCP tools `tasks.*` and `graph.*` that call the APIs with the caller's token and reject unknown arguments; `hosted.py` serves them over Streamable HTTP behind Clerk OAuth with a subject allowlist (`docs/runbooks/remote-mcp.md`) |
 | `src/empire_platform/cutover.py`, `docs/runbooks/` | backup/restore, write switch, SQLite freeze, lossless export back to SQLite |
 | `tests/` | isolation, RLS bypass, delegation, authorization conformance and TOCTOU, import, API, contract, writer parity, graph, MCP, and cutover/rollback tests |
 

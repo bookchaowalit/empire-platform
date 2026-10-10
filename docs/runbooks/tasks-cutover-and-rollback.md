@@ -82,6 +82,7 @@ and `~/.config/empire-platform/db.env`, never in the repo.
 |---|---|---|
 | `tasks-api` | `.railway/railway.ts` (healthcheck `/health`) | `EMPIRE_SERVICE=api`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_API`, `TASKS_API_JWT_PUBLIC_KEY_PEM`, `TASKS_API_JWT_ISSUER`, `TASKS_API_HOST=0.0.0.0` |
 | `tasks-publisher` | `.railway/railway.ts` (healthcheck `/health`) | `EMPIRE_SERVICE=publisher`, `EMPIRE_DB_MODE=hosted`, `EMPIRE_DB_URL_TASKS_PUBLISHER`, `EMPIRE_DB_URL_GRAPH_API`, optional `PUBLISH_INTERVAL` (seconds, default 5) |
+| `empire-mcp` | `.railway/railway.ts` (healthcheck `/health`) | `EMPIRE_SERVICE=mcp` and the Remote MCP variables in [`remote-mcp.md`](remote-mcp.md); the `tasks-api` service then also needs `TASKS_API_MCP_PUBLIC_KEY_PEM` |
 
 - Railway sets `PORT`; the API honors it before `TASKS_API_PORT`.
 - Railway Infrastructure as Code (`.railway/railway.ts`, partial

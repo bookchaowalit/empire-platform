@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import jwt
 
@@ -33,8 +33,8 @@ class ExchangeRefused(Exception):
 
 @dataclass(frozen=True)
 class TokenExchanger:
-    private_pem: str
-    public_pem: str
+    private_pem: str = field(repr=False)
+    public_pem: str = field(repr=False)
     issuer: str
 
     def exchange(self, subject_token: str, audience: str, scopes: tuple[str, ...] | None = None) -> str:
@@ -60,3 +60,39 @@ class TokenExchanger:
             if claims.get(carried):
                 exchanged[carried] = claims[carried]
         return jwt.encode(exchanged, self.private_pem, algorithm="RS256")
+
+
+# Hosted MCP (empire-mcp) tokens. The MCP server authenticates the human with
+# the OAuth provider, maps the subject to a platform identity through its
+# allowlist, and mints one short token per tool call with its own key. Cells
+# trust this issuer only for these scopes, without a delegation, for at most
+# MCP_TOKEN_TTL_SECONDS: deleting and archiving are never reachable over MCP.
+MCP_ISSUER = "empire-mcp"
+MCP_TOKEN_TTL_SECONDS = 300
+MCP_SCOPES = ("tasks.task:read", "tasks.task:write", "tasks.status:write", "tasks.link:write")
+MCP_AUDIENCE_SCOPES = {"tasks-api": MCP_SCOPES, "graph-api": ("graph.query:read",)}
+
+
+@dataclass(frozen=True)
+class McpTokenMinter:
+    """Mints the per-call token empire-mcp presents to a cell on the caller's behalf."""
+
+    private_pem: str = field(repr=False)
+    issuer: str = MCP_ISSUER
+    ttl: int = MCP_TOKEN_TTL_SECONDS
+
+    def __post_init__(self) -> None:
+        if not 0 < self.ttl <= MCP_TOKEN_TTL_SECONDS:
+            raise ValueError(f"MCP token ttl must be between 1 and {MCP_TOKEN_TTL_SECONDS} seconds")
+
+    def mint(self, audience: str, identity: uuid.UUID, workspace: uuid.UUID, external_subject: str) -> str:
+        if audience not in MCP_AUDIENCE_SCOPES:
+            raise ExchangeRefused(f"audience {audience!r} is not reachable over MCP")
+        now = int(time.time())
+        claims = {
+            "iss": self.issuer, "aud": audience, "sub": str(identity), "ws": str(workspace),
+            "iat": now, "exp": now + self.ttl, "jti": str(uuid.uuid4()),
+            "scope": " ".join(MCP_AUDIENCE_SCOPES[audience]),
+            "act": {"sub": external_subject},
+        }
+        return jwt.encode(claims, self.private_pem, algorithm="RS256")
