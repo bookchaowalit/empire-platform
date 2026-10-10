@@ -112,6 +112,7 @@ def test_production_tokens(cluster, monkeypatch, tmp_path):
     assert cells.main(["grant", "--workspace", slug, "--cell", "decisions"]) == 0
     assert cells.grant(cluster, ws.id, "decisions") == []  # idempotent
     assert cells.main(["grant", "--workspace", slug, "--cell", "habits"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "notifications"]) == 0
     keys, tokens = tmp_path / "keys", tmp_path / "tokens"
     generate_keys(keys)
     assert automations.main(["provision", "--workspace", slug, "--tokens", str(tokens), "--key-dir", str(keys),
@@ -201,7 +202,8 @@ def test_owner_cli_is_a_registered_automation():
                                     "decisions.decision:read", "decisions.decision:write", "decisions.decision:approve",
                                     "decisions.decision:delete", "decisions.review:write",
                                     "habits.habit:read", "habits.habit:write", "habits.routine:read",
-                                    "habits.routine:write"}
+                                    "habits.routine:write", "notifications.rule:read", "notifications.rule:write",
+                                    "notifications.notification:read", "notifications.notification:write"}
     assert not any("cli" in item["writer"] for item in registry["not_automations"])
 
 

@@ -18,6 +18,11 @@ HABITS_OWNER = (
     "habits.routine:read", "habits.routine:write", "habits.routine:delete", "graph.habits:write",
 )
 
+NOTIFICATIONS_OWNER = (
+    "notifications.rule:read", "notifications.rule:write",
+    "notifications.notification:read", "notifications.notification:write",
+)
+
 # Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
 CELL_OWNERS: dict[str, tuple[str, ...]] = {}
 
@@ -27,4 +32,5 @@ TASKS_OWNER = (
     "tasks.assignment:write", "tasks.suggestion:write",
 )
 
-CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_OWNER)
+CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_OWNER,
+                   notifications=NOTIFICATIONS_OWNER)
