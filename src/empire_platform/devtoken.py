@@ -25,7 +25,7 @@ KEY_DIR = REPO_ROOT / ".runtime" / "dev-keys"
 ISSUER = "empire-platform-dev"
 # Every token works for every cell API; each API still checks its own audience and asks the PDP.
 DEFAULT_AUDIENCES = ("tasks-api", "graph-api", "platform-api", "decisions-api", "habits-api",
-                     "notifications-api", "goals-api", "projects-api", "roles-skills-api")
+                     "notifications-api", "goals-api", "projects-api", "roles-skills-api", "accounts-api")
 
 
 def key_pair(directory: Path = KEY_DIR) -> tuple[str, str]:

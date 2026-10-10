@@ -701,6 +701,27 @@
       "scopes": [
         "graph.roles-skills:write"
       ]
+    },
+    {
+      "id": "accounts-web",
+      "writers": [
+        "bookchaowalit/solo-accounts:web/lib/api.ts"
+      ],
+      "does": "serves the Accounts web app (owner-only) and applies its identity, domain, mailbox and account edits",
+      "scopes": [
+        "accounts.account:delete",
+        "accounts.account:read",
+        "accounts.account:write",
+        "accounts.domain:delete",
+        "accounts.domain:read",
+        "accounts.domain:write",
+        "accounts.identity:delete",
+        "accounts.identity:read",
+        "accounts.identity:write",
+        "accounts.mailbox:delete",
+        "accounts.mailbox:read",
+        "accounts.mailbox:write"
+      ]
     }
   ],
   "not_automations": []

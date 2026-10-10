@@ -61,6 +61,12 @@ ROLES_SKILLS_OWNER = (
     "graph.roles-skills:write",
 )
 
+ACCOUNTS_OWNER = tuple(
+    f"accounts.{resource}:{right}"
+    for resource in ("identity", "domain", "mailbox", "account")
+    for right in ("read", "write", "delete")
+)
+
 # Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
 CELL_OWNERS: dict[str, tuple[str, ...]] = {}
 
@@ -73,3 +79,4 @@ TASKS_OWNER = (
 CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_OWNER,
                    notifications=NOTIFICATIONS_OWNER, goals=GOALS_OWNER, projects=PROJECTS_OWNER)
 CELL_OWNERS["roles-skills"] = ROLES_SKILLS_OWNER
+CELL_OWNERS["accounts"] = ACCOUNTS_OWNER
