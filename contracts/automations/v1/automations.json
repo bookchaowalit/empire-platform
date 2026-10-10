@@ -515,9 +515,11 @@
       ],
       "does": "serves the Today web view and applies its status, priority, progress, due date, and time edits",
       "scopes": [
+        "goals.goal:read",
+        "projects.project:read",
+        "tasks.status:write",
         "tasks.task:read",
-        "tasks.task:write",
-        "tasks.status:write"
+        "tasks.task:write"
       ]
     },
     {
