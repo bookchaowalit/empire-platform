@@ -90,6 +90,36 @@ AUTOMATION_OWNER = (
     "automation.automation-log:read", "automation.automation-log:write", "automation.automation-log:delete",
 )
 
+CONTENT_OWNER = (
+    "content.content:read", "content.content:write", "content.content:delete",
+    "content.content-calendar:read", "content.content-calendar:write", "content.content-calendar:delete",
+    "content.content-series-episode:read", "content.content-series-episode:write", "content.content-series-episode:delete",
+    "content.content-series-episode-metric:read", "content.content-series-episode-metric:write", "content.content-series-episode-metric:delete",
+)
+
+LEARNING_OWNER = (
+    "learning.challenge:read", "learning.challenge:write", "learning.challenge:delete",
+    "learning.challenge-assignment:read", "learning.challenge-assignment:write", "learning.challenge-assignment:delete",
+)
+
+DIARY_OWNER = (
+    "diary.journal-entry:read", "diary.journal-entry:write", "diary.journal-entry:delete",
+)
+
+OPPORTUNITIES_OWNER = (
+    "opportunities.opportunity:read", "opportunities.opportunity:write", "opportunities.opportunity:delete",
+    "opportunities.opportunity-action:read", "opportunities.opportunity-action:write", "opportunities.opportunity-action:delete",
+)
+
+HEALTH_OWNER = (
+    "health.health-metric:read", "health.health-metric:write", "health.health-metric:delete",
+)
+
+TIME_OWNER = (
+    "time.time-entry:read", "time.time-entry:write", "time.time-entry:delete",
+    "time.time-log:read", "time.time-log:write", "time.time-log:delete",
+)
+
 # Owner permissions per cell; `empire-cells grant` adds them to a workspace's owner role.
 CELL_OWNERS: dict[str, tuple[str, ...]] = {}
 
@@ -104,3 +134,4 @@ CELL_OWNERS.update(tasks=TASKS_OWNER, decisions=DECISIONS_OWNER, habits=HABITS_O
 CELL_OWNERS["roles-skills"] = ROLES_SKILLS_OWNER
 CELL_OWNERS.update(operating=OPERATING_OWNER, intake=INTAKE_OWNER, automation=AUTOMATION_OWNER)
 CELL_OWNERS["accounts"] = ACCOUNTS_OWNER
+CELL_OWNERS.update(content=CONTENT_OWNER, learning=LEARNING_OWNER, diary=DIARY_OWNER, opportunities=OPPORTUNITIES_OWNER, health=HEALTH_OWNER, time=TIME_OWNER)
