@@ -355,6 +355,9 @@ def audit_log(**fields: Any) -> None:
     log.info(json.dumps({"correlation_id": correlation_id.get(), **fields}, default=str, sort_keys=True))
 
 
+MAX_OCCURRENCES_PER_CALL = 366  # defence in depth: one call never generates more than this; a retry continues
+
+
 def recurrence_step(rule: str | None) -> timedelta | None:
     """Same rule language as the SQLite-era recurring_gen.py."""
     if not rule:
@@ -367,7 +370,11 @@ def recurrence_step(rule: str | None) -> timedelta | None:
     for pattern, days in ((r"every\s+(\d+)\s*months?", 30), (r"every\s+(\d+)\s*d", 1), (r"every\s+(\d+)\s*w", 7)):
         match = re.match(pattern, rule)
         if match:
-            return timedelta(days=int(match.group(1)) * days)
+            try:
+                step = timedelta(days=int(match.group(1)) * days)
+            except OverflowError:
+                return None
+            return step if step > timedelta(0) else None  # "every 0 days" would never advance
     return None
 
 
@@ -936,7 +943,7 @@ def create_app(
             ).fetchall()
             occurrence, next_due = next_occurrence(parent, existing, step, body.until)
             created = []
-            while next_due <= body.until:
+            while next_due <= body.until and len(created) < MAX_OCCURRENCES_PER_CALL:
                 occurrence += 1
                 row = conn.execute(
                     "INSERT INTO tasks.tasks (workspace_id, title, description, priority, project, tags, category,"
@@ -952,7 +959,10 @@ def create_app(
                 if row is not None:
                     emit(conn, caller, execution, "created", row["id"], None, row)
                     created.append(to_task(row))
-                next_due = next_due + step
+                try:
+                    next_due = next_due + step
+                except OverflowError:
+                    break
             return OccurrenceResult(created=created, existing=len(existing))
 
     # ── relations: links, assignments, role suggestions, types ──────────

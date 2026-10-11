@@ -22,6 +22,7 @@ Environment: ``EMPIRE_TASKS_API_URL``, ``RECURRING_GEN_TOKEN``. Nothing secret i
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -36,6 +37,7 @@ from zoneinfo import ZoneInfo
 
 BANGKOK = ZoneInfo("Asia/Bangkok")
 PAGE = 200
+MAX_PREVIEW = 366  # matches the API cap per generate call
 # Same rule language as the Tasks API (services/tasks/tasks_api), used only for the dry-run preview.
 FIXED_DAYS = {"daily": 1, "every day": 1, "weekly": 7, "every week": 7, "monthly": 30, "every month": 30,
               "biweekly": 14, "every 2 weeks": 14, "every 3 months": 90}
@@ -46,6 +48,18 @@ INSTANCE_TITLE = re.compile(r"^\[R(\d+)\] (.*)$", re.S)
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # never forward a token
         return None
+
+
+class RequestError(RuntimeError):
+    """The request could not be built or sent; the message is fixed so no header value can leak."""
+
+    def __init__(self) -> None:
+        super().__init__("request_failed")
+
+
+def bad_value(value: str) -> bool:
+    """True when ``value`` has whitespace or control characters (CR/LF would reach the header)."""
+    return any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in value)
 
 
 class ApiError(RuntimeError):
@@ -67,17 +81,19 @@ class Http:
     def call(self, method: str, path: str, body: Any = None, params: dict | None = None) -> Any:
         clean = {k: v for k, v in (params or {}).items() if v is not None}
         query = f"?{urllib.parse.urlencode(clean, doseq=True)}" if clean else ""
-        request = urllib.request.Request(
-            f"{self.base}{path}{query}", method=method,
-            data=json.dumps(body, default=str).encode() if body is not None else None,
-            headers={"Authorization": f"Bearer {self.token}", "X-Empire-Channel": "workflow",
-                     "Content-Type": "application/json"})
         try:
+            request = urllib.request.Request(
+                f"{self.base}{path}{query}", method=method,
+                data=json.dumps(body, default=str).encode() if body is not None else None,
+                headers={"Authorization": f"Bearer {self.token}", "X-Empire-Channel": "workflow",
+                         "Content-Type": "application/json"})
             with self.opener.open(request, timeout=self.timeout) as response:
                 raw = response.read()
                 return json.loads(raw) if raw else None
         except urllib.error.HTTPError as error:
             raise ApiError(error.code, f"{method} {path.split('/occurrences')[0] if 'occurrences' in path else path}") from None
+        except (ValueError, TypeError, http.client.HTTPException):
+            raise RequestError() from None  # never include the exception text: it can quote the header
 
 
 def recurrence_step(rule: str | None) -> timedelta | None:
@@ -89,7 +105,11 @@ def recurrence_step(rule: str | None) -> timedelta | None:
     for pattern, days in PATTERNS:
         match = re.match(pattern, rule)
         if match:
-            return timedelta(days=int(match.group(1)) * days)
+            try:
+                step = timedelta(days=int(match.group(1)) * days)
+            except OverflowError:
+                return None
+            return step if step > timedelta(0) else None  # "every 0 days" never advances: unknown rule
     return None
 
 
@@ -111,10 +131,13 @@ def preview_due_dates(parent: dict[str, Any], existing: Sequence[Sequence[Any]],
         parent_due = _day(parent.get("due_date"))
         next_due = parent_due + step if parent_due else until
     out = []
-    while next_due <= until:
+    while next_due <= until and len(out) < MAX_PREVIEW:
         occurrence += 1
         out.append((occurrence, next_due))
-        next_due += step
+        try:
+            next_due += step
+        except OverflowError:
+            break
     return out
 
 
@@ -178,13 +201,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--until", type=date.fromisoformat, help="generate up to this date (default: today, Asia/Bangkok)")
     args = parser.parse_args(argv)
     env = os.environ
-    missing = [k for k in ("EMPIRE_TASKS_API_URL", "RECURRING_GEN_TOKEN") if not env.get(k)]
+    url, token = env.get("EMPIRE_TASKS_API_URL", "").strip(), env.get("RECURRING_GEN_TOKEN", "").strip()
+    missing = [k for k, v in (("EMPIRE_TASKS_API_URL", url), ("RECURRING_GEN_TOKEN", token)) if not v]
     if missing:
         print(json.dumps({"event": "recurring.run", "error": "missing_config", "missing": missing}))
         return 2
+    if bad_value(url) or bad_value(token):  # fixed message: never echo either value
+        print(json.dumps({"event": "recurring.run", "error": "invalid_config"}))
+        return 2
     until = args.until or datetime.now(BANGKOK).date()
     try:
-        counts = run(Http(env["EMPIRE_TASKS_API_URL"], env["RECURRING_GEN_TOKEN"]), until, dry_run=args.dry_run)
+        counts = run(Http(url, token), until, dry_run=args.dry_run)
+    except RequestError:
+        print(json.dumps({"event": "recurring.run", "error": "request_failed"}))
+        return 1
     except (ApiError, OSError, urllib.error.URLError) as exc:
         print(json.dumps({"event": "recurring.run", "error": type(exc).__name__, "detail": str(exc)[:200]}))
         return 1

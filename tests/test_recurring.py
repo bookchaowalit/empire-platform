@@ -120,3 +120,52 @@ def test_http_requires_https():
     with pytest.raises(SystemExit):
         recurring.Http("http://tasks.example", "t")
     recurring.Http("http://127.0.0.1:3601", "t")
+
+
+@pytest.mark.parametrize("rule", ["every 0 days", "every 0 weeks", "every 0 months", "every 0d", "every " + "9" * 30 + " days"])
+def test_non_positive_or_absurd_interval_is_an_unknown_rule(rule):
+    assert recurrence_step(rule) is None
+    assert preview_due_dates(task(1, recurrence_rule=rule, due_date="2026-10-01"), [], TODAY) == []
+    http = FakeHttp([task(1, recurrence_rule=rule)])
+    counts = run(http, TODAY, dry_run=False)
+    assert counts["unknown_rule"] == 1 and counts["generated"] == 0 and posts(http) == []
+    assert run(FakeHttp([task(1, recurrence_rule=rule)]), TODAY, dry_run=True)["unknown_rule"] == 1
+
+
+def test_preview_is_capped():
+    parent = task(1, recurrence_rule="daily", due_date="2000-01-01")
+    assert len(preview_due_dates(parent, [], date(2026, 10, 11))) == recurring.MAX_PREVIEW
+
+
+@pytest.mark.parametrize("token", ["zzsecret\nX-Evil: 1", "zzsecret\r\nabc", "zz secret", " \n"])
+def test_bad_token_never_appears_in_output(monkeypatch, capsys, token):
+    monkeypatch.setenv("EMPIRE_TASKS_API_URL", "https://tasks.example")
+    monkeypatch.setenv("RECURRING_GEN_TOKEN", token)
+    code = recurring.main([])
+    captured = capsys.readouterr()
+    assert code == 2 and "zz" not in captured.out + captured.err
+    assert json.loads(captured.out)["error"] in ("invalid_config", "missing_config")
+
+
+def test_surrounding_whitespace_is_stripped(monkeypatch, capsys):
+    seen = {}
+    monkeypatch.setenv("EMPIRE_TASKS_API_URL", " https://tasks.example\n")
+    monkeypatch.setenv("RECURRING_GEN_TOKEN", "  tok\n")
+    monkeypatch.setattr(recurring, "Http", lambda base, token: seen.update(base=base, token=token) or FakeHttp([]))
+    assert recurring.main([]) == 0
+    assert seen == {"base": "https://tasks.example", "token": "tok"}
+
+
+def test_request_build_failure_leaks_nothing(monkeypatch, capsys):
+    # Bypass main's validation to prove the transport layer itself never prints header text.
+    http = recurring.Http("https://tasks.example", "tok\nsecret-part")
+    with pytest.raises(recurring.RequestError) as caught:
+        http.call("GET", "/v1/tasks")
+    assert "secret-part" not in str(caught.value) and caught.value.__cause__ is None
+    monkeypatch.setenv("EMPIRE_TASKS_API_URL", "https://tasks.example")
+    monkeypatch.setenv("RECURRING_GEN_TOKEN", "tok")
+    real = recurring.Http
+    monkeypatch.setattr(recurring, "Http", lambda base, token: real(base, "tok\nsecret-part"))
+    assert recurring.main([]) == 1
+    captured = capsys.readouterr()
+    assert "secret-part" not in captured.out + captured.err and "request_failed" in captured.out

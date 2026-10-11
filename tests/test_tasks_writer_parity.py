@@ -113,3 +113,24 @@ def test_parent_from_another_workspace_is_rejected(client, token, world):  # noq
     response = client.post("/v1/tasks", json={"title": "Child", "parent_task_id": beta_task["id"]},
                            headers=token(world.owner, world.alpha))
     assert response.status_code == 422 and response.json()["detail"]["error"] == "reference_not_found"
+
+
+def test_generate_rejects_a_zero_interval_instead_of_looping(client, token, world):  # noqa: F811
+    owner = token(world.owner, world.alpha)
+    for rule in ("every 0 days", "every 0 weeks", "every 0 months"):
+        parent = create(client, owner, title=f"Broken {rule}", recurrence_rule=rule, due_date="2026-10-01")
+        response = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json={"until": "2026-12-31"}, headers=owner)
+        assert response.status_code == 422, rule
+
+
+def test_generate_is_capped_per_call_and_a_retry_continues(client, token, world, cluster):  # noqa: F811
+    from tasks_api.app import MAX_OCCURRENCES_PER_CALL
+
+    owner = token(world.owner, world.alpha)
+    parent = create(client, owner, title="Daily forever", recurrence_rule="daily", due_date="2020-01-01")
+    body = {"until": "2099-01-01"}
+    first = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json=body, headers=owner).json()
+    assert len(first["created"]) == MAX_OCCURRENCES_PER_CALL
+    second = client.post(f"/v1/tasks/{parent['id']}/occurrences/generate", json=body, headers=owner).json()
+    assert len(second["created"]) == MAX_OCCURRENCES_PER_CALL and second["existing"] == MAX_OCCURRENCES_PER_CALL
+    assert first["created"][-1]["recurrence_occurrence"] + 1 == second["created"][0]["recurrence_occurrence"]
