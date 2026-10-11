@@ -96,7 +96,27 @@ checked) and reports the file name, never the token. Tokens minted for one day
 or less, such as `owner-cli` (one hour), expire by design and are skipped.
 Override the directory with `--tokens DIR` or `EMPIRE_TOKENS_DIR`.
 
-### Rotate
+### Automatic rotation
+
+`empire-token-rotate` (`src/empire_platform/rotate.py`) runs from the owner's
+crontab every Sunday 19:30 UTC (log `~/.local/state/empire-platform/rotate.log`).
+It re-provisions every automation whose local or deployed token expires within
+10 days and pushes the new token on stdin to every target in
+`contracts/automations/v1/deployments.json` (Railway service variables, Vercel
+production variables). With a weekly run and a 10-day window, a
+`token_expiring` (7 days) or `token_expired` finding means rotation failed:
+read the log, then run it by hand:
+
+```bash
+EMPIRE_DB_MODE=hosted .venv/bin/empire-token-rotate --workspace owner \
+    --tokens ~/.config/empire-platform/tokens --key-dir ~/.config/empire-platform/signing \
+    --issuer empire-platform --dry-run   # then without --dry-run
+```
+
+When an automation token is deployed somewhere new, add a target to
+`deployments.json`; a copy that is not listed there is never rotated.
+
+### Manual rotation (fallback)
 
 1. Mint new tokens (idempotent; it also follows scope changes in
    `contracts/automations/v1/automations.json`):
@@ -110,7 +130,7 @@ Override the directory with `--tokens DIR` or `EMPIRE_TOKENS_DIR`.
    Local automations read the files directly and pick up the new tokens on
    their next run.
 
-2. Update every copy outside the token directory. Current copy: Railway
+2. Update every copy outside the token directory. Example: Railway
    project `solo-decisions`, variable `DECISIONS_PUBLISHER_TOKEN` on services
    `decisions-api` and `decisions-publisher`. From the linked `solo-decisions`
    checkout, pass the value on stdin so it never appears in the shell history
@@ -123,8 +143,8 @@ Override the directory with `--tokens DIR` or `EMPIRE_TOKENS_DIR`.
        < ~/.config/empire-platform/tokens/decisions-publisher.jwt
    ```
 
-   Each set redeploys the service. When a new copy is added elsewhere, list it
-   here.
+   Each set redeploys the service. The full list of copies is
+   `contracts/automations/v1/deployments.json`; update each of them the same way.
 
 3. Verify: `empire-monitor --json` reports no `token_*` finding, both Railway
    services are healthy (`railway service status`), and the decisions outbox
