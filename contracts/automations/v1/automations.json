@@ -931,6 +931,17 @@
         "roles-skills.personal-role:read",
         "time.time-entry:read"
       ]
+    },
+    {
+      "id": "platform-monitor",
+      "writers": [
+        "bookchaowalit/empire-platform:src/empire_platform/monitor.py"
+      ],
+      "does": "queues the daily platform check's warning or breach for the owner in the notifications cell",
+      "scopes": [
+        "notifications.notification:read",
+        "notifications.notification:write"
+      ]
     }
   ],
   "not_automations": []

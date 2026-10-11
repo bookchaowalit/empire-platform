@@ -112,6 +112,34 @@ def due_automations(targets: list[Target], tokens: Path, checkouts: Path, within
     return due
 
 
+def local_due(tokens: Path, known: set[str], within_days: int, now: float,
+              skip: set[str] = frozenset()) -> dict[str, str]:
+    """Token files used only on this machine (CLIs, MCP, monitors) that expire soon.
+
+    Only automations from the registry count; short-lived tokens (a lifetime of a day or
+    less, e.g. owner tokens) are left alone.
+    """
+    limit = now + within_days * DAY
+    due: dict[str, str] = {}
+    for path in sorted(tokens.glob("*.jwt")):
+        name = path.stem
+        if name in skip or name not in known:
+            continue
+        token = path.read_text(encoding="utf-8").strip()
+        exp = token_exp(token)
+        try:
+            payload = token.split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            iat = int(json.loads(base64.urlsafe_b64decode(payload)).get("iat") or 0)
+        except (IndexError, ValueError, TypeError):
+            iat = 0
+        if exp is None or (iat and exp - iat <= DAY):
+            continue
+        if exp < limit:
+            due[name] = "local token expiring"
+    return due
+
+
 def push_railway(run: Runner, cwd: Path, service: str, variable: str, token: str) -> bool:
     completed = run(["railway", "variables", "--service", service, "--set-from-stdin", variable],
                     cwd=cwd, input=token, capture_output=True, text=True)
@@ -197,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.only:
         targets = [t for t in targets if t.automation in set(args.only)]
     due = due_automations(targets, args.tokens, args.checkouts, within, subprocess.run, time.time(), args.force)
+    if not args.only:
+        registry = json.loads((REPO_ROOT / "contracts" / "automations" / "v1" / "automations.json").read_text())
+        known = {item["id"] for item in registry["automations"]}
+        due.update(local_due(args.tokens, known, within, time.time(), skip=set(due)))
 
     def mint(automations: list[str]) -> None:
         from empire_platform import automations as provisioning

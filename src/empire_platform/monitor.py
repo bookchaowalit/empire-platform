@@ -229,14 +229,58 @@ def run(cluster: Cluster, api: str | None, state_dir: Path = STATE_DIR,
     return report
 
 
+def alert_text(report: dict[str, Any]) -> tuple[str, str]:
+    """(title, message) for the owner notification of a warn or breach report."""
+    title = {"warn": "Tasks platform: warning", "breach": "Tasks platform: rollback signal"}[report["level"]]
+    lines = [f"checked {report['checked_at']}"]
+    for finding in report["findings"]:
+        where = f" [{finding['workspace']}]" if finding.get("workspace") else ""
+        lines.append(f"- {finding['level']} {finding['check']}{where}: {finding['detail']}")
+    if report["level"] == "breach":
+        lines.append("Runbook: docs/runbooks/tasks-cutover-and-rollback.md (the owner decides)")
+    return title, "\n".join(lines)[:7900]
+
+
+def notify(report: dict[str, Any], api: str, token: str, timeout: float = 15.0) -> str:
+    """Queue the report in the notifications cell; its dispatcher delivers it (once per day and level)."""
+    title, text = alert_text(report)
+    body = {"title": title, "message": text, "notification_type": "platform_check",
+            "severity": "critical" if report["level"] == "breach" else "warning",
+            "dedupe_key": f"platform-check:{report['checked_at'][:10]}:{report['level']}"}
+    request = urllib.request.Request(f"{api.rstrip('/')}/v1/notifications", method="POST",
+                                     data=json.dumps(body).encode(),
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                                              "X-Empire-Channel": "workflow"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return str(json.loads(response.read() or b"{}").get("outcome", "queued"))
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"notifications API {error.code}") from None
+    except (urllib.error.URLError, OSError, ValueError) as error:
+        raise RuntimeError(f"notifications API unreachable ({type(error).__name__})") from None
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="empire-monitor", description=__doc__.splitlines()[0])
     parser.add_argument("--api", help="Tasks API base URL to health-check")
     parser.add_argument("--tokens", type=Path, default=TOKEN_DIR,
                         help="automation token directory to check for expiry (default: %(default)s)")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--notify", action="store_true",
+                        help="queue a warn/breach report for the owner in the notifications cell "
+                             "(EMPIRE_NOTIFICATIONS_API + the platform-monitor token)")
     args = parser.parse_args(argv)
     report = run(default_cluster(), args.api, tokens_dir=args.tokens)
+    if args.notify and report["level"] != "ok":
+        api = os.environ.get("EMPIRE_NOTIFICATIONS_API", "").strip()
+        token_file = args.tokens / "platform-monitor.jwt"
+        if not api or not token_file.is_file():
+            print("notify skipped: set EMPIRE_NOTIFICATIONS_API and provision the platform-monitor token", file=sys.stderr)
+        else:
+            try:
+                print(f"notification {notify(report, api, token_file.read_text(encoding='utf-8').strip())}")
+            except RuntimeError as error:
+                print(f"notify failed: {error}", file=sys.stderr)
     if args.json:
         print(json.dumps(report, indent=2))
     else:

@@ -121,3 +121,20 @@ def test_token_exp_ignores_garbage():
     assert rotate.token_exp(None) is None
     assert rotate.token_exp("not-a-jwt") is None
     assert rotate.token_exp("a.b.c") is None
+
+
+def test_local_tokens_are_renewed_but_short_lived_ones_are_not(tmp_path):
+    tokens = tmp_path / "tokens"
+    tokens.mkdir()
+
+    def write(name, iat, exp):
+        payload = base64.urlsafe_b64encode(json.dumps({"iat": iat, "exp": exp}).encode()).decode().rstrip("=")
+        (tokens / f"{name}.jwt").write_text(f"h.{payload}.s")
+
+    write("owner-cli", int(NOW) - 25 * rotate.DAY, int(NOW) + 5 * rotate.DAY)       # due
+    write("governance-reader", int(NOW), int(NOW) + 30 * rotate.DAY)               # fresh
+    write("import-owner", int(NOW), int(NOW) + 3600)                               # short-lived: ignored
+    write("not-an-automation", int(NOW) - 25 * rotate.DAY, int(NOW) + rotate.DAY)  # unknown: ignored
+    known = {"owner-cli", "governance-reader", "import-owner"}
+    assert rotate.local_due(tokens, known, 10, NOW) == {"owner-cli": "local token expiring"}
+    assert rotate.local_due(tokens, known, 10, NOW, skip={"owner-cli"}) == {}
