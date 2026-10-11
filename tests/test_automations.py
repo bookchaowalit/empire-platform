@@ -169,3 +169,27 @@ def test_provisioning_is_idempotent_and_follows_scope_changes(cluster, env):
             "SELECT count(*) FROM platform.delegations WHERE grantee_identity_id = %s AND revoked_at IS NULL",
             (third["sales-pipeline"].identity,)).fetchone()[0]
     assert active == 1
+
+
+def test_provision_only_touches_the_named_automations(cluster):
+    with cluster.connect("platform_api") as conn:
+        ws = create_workspace(conn, f"only-{uuid.uuid4().hex[:8]}",
+                              [p for perms in CELL_OWNERS.values() for p in perms])
+        conn.commit()
+    items = provision(cluster, ws.id, only={"deploy-verifier"})
+    assert [i.automation for i in items] == ["deploy-verifier"]
+    with cluster.connect("postgres") as conn:
+        others = conn.execute(
+            "SELECT count(*) FROM platform.identities i JOIN platform.memberships m ON m.identity_id = i.id"
+            " WHERE m.workspace_id = %s AND i.kind = 'automation' AND i.display_name <> 'deploy-verifier'",
+            (ws.id,)).fetchone()[0]
+    assert others == 0
+    with pytest.raises(KeyError):
+        provision(cluster, ws.id, only={"no-such-automation"})
+
+
+def test_deploy_verifier_only_reads():
+    verifier = next(a for a in REGISTRY["automations"] if a["id"] == "deploy-verifier")
+    assert verifier["scopes"] and all(scope.endswith(":read") for scope in verifier["scopes"])
+    # sensitive personal data stays out of reach: the probe expects 403 there
+    assert not any(scope.split(".")[0] in {"diary", "accounts", "health"} for scope in verifier["scopes"])

@@ -909,6 +909,28 @@
         "tasks.status:write",
         "tasks.task:read"
       ]
+    },
+    {
+      "id": "deploy-verifier",
+      "readers": [
+        "infra/scripts/platform/cell_probe.py"
+      ],
+      "does": "after a deploy, reads one record from each cell to prove the request path (JWT, platform authz, database) works; no write. Diary, accounts and health hold sensitive personal data, so it has no scope there and expects 403",
+      "scopes": [
+        "automation.cron-job:read",
+        "content.content:read",
+        "decisions.decision:read",
+        "goals.goal:read",
+        "habits.habit:read",
+        "intake.source:read",
+        "learning.challenge:read",
+        "notifications.notification:read",
+        "operating.cycle:read",
+        "opportunities.opportunity:read",
+        "projects.project:read",
+        "roles-skills.personal-role:read",
+        "time.time-entry:read"
+      ]
     }
   ],
   "not_automations": []

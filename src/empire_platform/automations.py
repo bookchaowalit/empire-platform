@@ -45,9 +45,15 @@ def load_registry(path: Path = REGISTRY) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def provision(cluster: Cluster, workspace_id: uuid.UUID, registry: dict | None = None) -> list[Provisioned]:
+def provision(cluster: Cluster, workspace_id: uuid.UUID, registry: dict | None = None,
+              only: set[str] | None = None) -> list[Provisioned]:
+    """Provision every registry automation, or just the ids in ``only``."""
     registry = registry or load_registry()
     days = int(registry["delegation_days"])
+    if only is not None:
+        unknown = only - {a["id"] for a in registry["automations"]}
+        if unknown:
+            raise KeyError(f"unknown automation(s): {', '.join(sorted(unknown))}")
     results: list[Provisioned] = []
     with cluster.connect("platform_api") as conn:
         conn.row_factory = dict_row
@@ -55,6 +61,8 @@ def provision(cluster: Cluster, workspace_id: uuid.UUID, registry: dict | None =
         owner = conn.execute("SELECT owner_identity_id FROM platform.workspaces WHERE id = %s",
                              (workspace_id,)).fetchone()["owner_identity_id"]
         for automation in registry["automations"]:
+            if only is not None and automation["id"] not in only:
+                continue
             subject = f"automation:{workspace_id}:{automation['id']}"
             scopes = tuple(sorted(automation["scopes"]))
             row = conn.execute("SELECT id FROM platform.identities WHERE external_subject = %s", (subject,)).fetchone()
@@ -120,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--workspace", required=True, help="workspace slug")
     run.add_argument("--tokens", type=Path, help="write a token per automation into this directory")
     run.add_argument("--ttl-days", type=float, help="token lifetime in days (default: 1 hour)")
+    run.add_argument("--only", action="append", metavar="AUTOMATION",
+                     help="provision and mint only this automation (repeatable); others are left untouched")
     _add_key_options(run)
     owner = sub.add_parser("owner-token", help="token for the workspace owner (no delegation), for the CLIs")
     owner.add_argument("--workspace", required=True)
@@ -156,7 +166,11 @@ def main(argv: list[str] | None = None) -> int:
         write_token(args.tokens, args.name, mint(private_pem, sub=found[1], ws=found[0], ttl=ttl, issuer=issuer))
         print(f"{args.name:20} owner token written")
         return 0
-    results = provision(cluster, found[0])
+    try:
+        results = provision(cluster, found[0], only=set(args.only) if args.only else None)
+    except KeyError as exc:
+        print(exc.args[0], file=sys.stderr)
+        return 2
     if args.tokens:
         for item in results:
             write_token(args.tokens, item.automation,
