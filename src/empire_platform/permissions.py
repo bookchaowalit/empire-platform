@@ -58,6 +58,7 @@ ROLES_SKILLS_OWNER = (
     "roles-skills.role-path-step:read", "roles-skills.role-path-step:write", "roles-skills.role-path-step:delete",
     "roles-skills.role-project-allocation:read", "roles-skills.role-project-allocation:write", "roles-skills.role-project-allocation:delete",
     "roles-skills.role-skill-link:read", "roles-skills.role-skill-link:write", "roles-skills.role-skill-link:delete",
+    "roles-skills.progress-entry:read", "roles-skills.progress-entry:write", "roles-skills.progress-entry:delete",
     "graph.roles-skills:write",
 )
 

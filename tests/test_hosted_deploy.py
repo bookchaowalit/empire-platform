@@ -227,6 +227,7 @@ def test_owner_cli_is_a_registered_automation():
                                     "goals.goal:read", "goals.goal:write", "goals.goal-task:read",
                                     "goals.goal-task:write", "projects.project:read", "projects.project:write",
                                     "projects.project-repo:read", "projects.project-repo:write",
+                                    "roles-skills.progress-entry:read", "roles-skills.progress-entry:write",
                                     "roles-skills.skill:read", "roles-skills.skill:write",
                                     "roles-skills.skill-category:read",
                                     "intake.source:read", "intake.source:write", "intake.intake:read",
