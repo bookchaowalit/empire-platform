@@ -15,9 +15,9 @@ switch is off while SQLite accepts writes again.
 
 | Step | Command / mechanism | Rehearsed by |
 |---|---|---|
-| 1. Back up both sides | copy `infra/database/solo-empire.db`; `cutover.backup()` (pg_dump) | `test_restore_from_backup_recovers_schema_and_data` |
+| 1. Back up both sides | copy the SQLite database file; `cutover.backup()` (pg_dump) | `test_restore_from_backup_recovers_schema_and_data` |
 | 2. Freeze SQLite tasks writers | `cutover.freeze_sqlite()` installs refusing triggers on the tasks tables | `test_frozen_sqlite_refuses_writers_until_rollback` |
-| 3. Final import | `empire-tasks-import --apply` (verifies counts, references, and every field; commits only if all pass) | `tests/test_tasks_import.py` |
+| 3. Final import | one-off SQLite import (verified counts, references, and every field; the importer was removed after the cutover finished) | done 2026-10-09 |
 | 3b. Seed the task-sync ledger | `SOLO_EMPIRE_TASKS_BACKEND=api task-sync seed-ledger` copies each task's SQLite sync state (local, synced, dirty, conflict, hash) into `task_sync_ledger`, so the first push after cutover sends what SQLite would have sent; refuses to run twice | `scripts/rehearse_cutover.py` (88 of 88 on current data) |
 | 4. Writers switch to the API | `SOLO_EMPIRE_TASKS_BACKEND=api` plus one token per automation (`empire-automations provision --workspace owner --tokens DIR`) | `scripts/rehearse_cutover.py` on a copy of current data; Go and TypeScript writers still pending |
 | 5. API writes on | `cutover.set_writes(True)` | `test_write_switch_stops_api_writes_but_not_reads` |
@@ -62,12 +62,7 @@ hosted runtime.
 
 ## Full rehearsal on current data
 
-`python scripts/rehearse_cutover.py` copies the live SQLite database (read-only
-backup API) into a throwaway cluster, runs cutover, writer operations with
-their own identities (retries, scope denials, a revocation mid-run), and the
-rollback above, then checks that no task was lost, duplicated, or changed
-unless a writer changed it. The report in `.runtime/readiness/rehearsal.json`
-holds counts only.
+The rehearsal on a copy of current data (cutover, writer operations, rollback) was run before the 2026-10-09 cutover; the rehearsal script and the SQLite importer were removed afterwards, together with their rollback tests. The "Rehearsed by" test names in the tables above are history.
 
 ## Schema or data damage without leaving PostgreSQL
 

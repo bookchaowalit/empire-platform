@@ -8,7 +8,7 @@ Writes .runtime/evidence/<timestamp>/ (ignored by git) containing:
 - migration-dry-run.json: tasks import dry run against the Solo Empire SQLite
   (counts, references, anomalies; no task content)
 - resilience.json: measurements from tests/test_resilience.py
-- rehearsal.json: cutover and rollback on a copy of current data (scripts/rehearse_cutover.py)
+- rehearsal.json: cutover and rollback on a copy of current data (historical; the script was removed)
 - commits.txt and diffstat.txt: history of this repository
 - contracts/: the committed API, event, authorization, and automation contracts
 - secrets-scan.json: detect-secrets findings (expected empty)

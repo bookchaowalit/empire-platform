@@ -59,7 +59,6 @@ skipped (exit 1 at the end). Variables (Railway only): `EMPIRE_SERVICE=recurring
 | `packages/authz/` | Python client (`authorize`, `enforce`) for the decision point |
 | `services/tasks/migrations/` | `tasks` schema with forced RLS, URN links, and the transactional outbox |
 | `services/tasks/tasks_api/` | Tasks API (`tasks.v1`); contract in `contracts/tasks/v1/` |
-| `src/empire_platform/tasks_import.py` | read-only SQLite snapshot import with full verification; dry run by default |
 | `services/tasks/tasks_api/publisher.py` | outbox publisher (`tasks_publisher` role): oldest first, retry with backoff, at least once |
 | `services/graph/` | graph schema (nodes, aliases, edges, relation types, consents, inbox), event consumer, and the read API |
 | `services/mcp/empire_mcp/` | MCP tools `tasks.*` and `graph.*` that call the APIs with the caller's token and reject unknown arguments; `hosted.py` serves them over Streamable HTTP behind Clerk OAuth with a subject allowlist (`docs/runbooks/remote-mcp.md`) |
