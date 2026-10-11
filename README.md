@@ -93,3 +93,20 @@ and its conformance cases live in `contracts/authz/v1/`.
 Writes check twice: an unlocked, recorded precheck, then `enforce` (with row
 locks) inside the transaction that changes data, so a revocation between the
 two is caught.
+
+## Token rotation
+
+Automation tokens live 30 days. `empire-token-rotate` re-provisions the automations
+whose token (local or deployed) expires within `rotate_within_days`, then pushes the
+new tokens to every target in `contracts/automations/v1/deployments.json` (Railway
+service variables, Vercel production env + one production deploy). Values move on
+stdin only; output is JSON lines without secrets. It runs weekly from the owner's
+crontab (Monday 02:30 Asia/Bangkok) next to the platform monitor:
+
+```bash
+EMPIRE_DB_MODE=hosted .venv/bin/empire-token-rotate --workspace owner \
+  --tokens ~/.config/empire-platform/tokens --key-dir ~/.config/empire-platform/signing \
+  --issuer empire-platform [--dry-run] [--force] [--only AUTOMATION]
+```
+
+Add a target to `deployments.json` whenever an automation token is deployed somewhere new.
