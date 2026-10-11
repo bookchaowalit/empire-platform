@@ -32,6 +32,21 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/tasks-api            # http://127.0.0.1:3601, tokens from empire-dev-token
 ```
 
+## Recurring tasks
+
+`empire-recurring [--dry-run] [--until YYYY-MM-DD]` (`src/empire_platform/recurring.py`)
+generates the due instances of recurring tasks. It runs as the `recurring-gen`
+Railway cron service (`15 17 * * *` UTC, i.e. 00:15 Asia/Bangkok, the schedule of
+the retired local "Generate Recurring" job) and calls the Tasks API over HTTPS
+with the `recurring-gen` automation token: it lists tasks, then
+`POST /v1/tasks/{id}/occurrences/generate` per recurring parent, which is
+idempotent (unique parent and occurrence), so re-runs create nothing twice.
+Zero recurring tasks is a successful no-op; one failing parent is logged and
+skipped (exit 1 at the end). Variables (Railway only): `EMPIRE_SERVICE=recurring`,
+`EMPIRE_TASKS_API_URL`, `RECURRING_GEN_TOKEN`. Deploy:
+`railway up --ci --service recurring-gen`; check:
+`railway run --service recurring-gen -- empire-recurring --dry-run`.
+
 ## Layout
 
 | Path | Contents |
