@@ -136,3 +136,43 @@ CELL_OWNERS["roles-skills"] = ROLES_SKILLS_OWNER
 CELL_OWNERS.update(operating=OPERATING_OWNER, intake=INTAKE_OWNER, automation=AUTOMATION_OWNER)
 CELL_OWNERS["accounts"] = ACCOUNTS_OWNER
 CELL_OWNERS.update(content=CONTENT_OWNER, learning=LEARNING_OWNER, diary=DIARY_OWNER, opportunities=OPPORTUNITIES_OWNER, health=HEALTH_OWNER, time=TIME_OWNER)
+
+# Finance, split into ten cells on 2026-10-12 (one repository, API, Neon project and MCP each).
+FINANCE_OWNERS: dict[str, tuple[str, ...]] = {
+    "finance-accounts": (
+        "finance-accounts.account:read", "finance-accounts.account:write", "finance-accounts.account:delete",
+    ),
+    "transactions": (
+        "transactions.transaction:read", "transactions.transaction:write", "transactions.transaction:delete",
+    ),
+    "budgets": (
+        "budgets.budget-plan:read", "budgets.budget-plan:write", "budgets.budget-plan:delete",
+    ),
+    "cash-flow": (
+        "cash-flow.cashflow-plan:read", "cash-flow.cashflow-plan:write", "cash-flow.cashflow-plan:delete",
+    ),
+    "reconciliations": (
+        "reconciliations.reconciliation:read", "reconciliations.reconciliation:write", "reconciliations.reconciliation:delete",
+    ),
+    "business-assets": (
+        "business-assets.asset:read", "business-assets.asset:write", "business-assets.asset:delete",
+        "business-assets.asset-metric:read", "business-assets.asset-metric:write", "business-assets.asset-metric:delete",
+    ),
+    "investments": (
+        "investments.investment:read", "investments.investment:write", "investments.investment:delete",
+        "investments.market-price:read", "investments.market-price:write", "investments.market-price:delete",
+        "investments.valuation:read", "investments.valuation:write", "investments.valuation:delete",
+    ),
+    "liabilities": (
+        "liabilities.liability:read", "liabilities.liability:write", "liabilities.liability:delete",
+    ),
+    "subscriptions": (
+        "subscriptions.subscription:read", "subscriptions.subscription:write", "subscriptions.subscription:delete",
+        "subscriptions.subscription-review:read", "subscriptions.subscription-review:write", "subscriptions.subscription-review:delete",
+        "subscriptions.subscription-alias:read", "subscriptions.subscription-alias:write", "subscriptions.subscription-alias:delete",
+    ),
+    "tax": (
+        "tax.tax-item:read", "tax.tax-item:write", "tax.tax-item:delete",
+    ),
+}
+CELL_OWNERS.update(FINANCE_OWNERS)

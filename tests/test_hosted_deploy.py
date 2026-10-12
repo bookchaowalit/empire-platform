@@ -125,6 +125,16 @@ def test_production_tokens(cluster, monkeypatch, tmp_path):
     assert cells.main(["grant", "--workspace", slug, "--cell", "opportunities"]) == 0
     assert cells.main(["grant", "--workspace", slug, "--cell", "health"]) == 0
     assert cells.main(["grant", "--workspace", slug, "--cell", "time"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "finance-accounts"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "transactions"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "budgets"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "cash-flow"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "reconciliations"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "business-assets"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "investments"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "liabilities"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "subscriptions"]) == 0
+    assert cells.main(["grant", "--workspace", slug, "--cell", "tax"]) == 0
     assert cells.main(["grant", "--workspace", slug, "--cell", "accounts"]) == 0
     keys, tokens = tmp_path / "keys", tmp_path / "tokens"
     generate_keys(keys)

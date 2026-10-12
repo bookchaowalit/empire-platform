@@ -27,7 +27,9 @@ ISSUER = "empire-platform-dev"
 DEFAULT_AUDIENCES = ("tasks-api", "graph-api", "platform-api", "decisions-api", "habits-api",
                      "notifications-api", "goals-api", "projects-api", "roles-skills-api", "accounts-api",
                      "operating-api", "intake-api", "automation-api",
-                     "content-api", "learning-api", "diary-api", "opportunities-api", "health-api", "time-api")
+                     "content-api", "learning-api", "diary-api", "opportunities-api", "health-api", "time-api",
+                     "finance-accounts-api", "transactions-api", "budgets-api", "cash-flow-api", "reconciliations-api",
+                     "business-assets-api", "investments-api", "liabilities-api", "subscriptions-api", "tax-api")
 
 
 def key_pair(directory: Path = KEY_DIR) -> tuple[str, str]:
