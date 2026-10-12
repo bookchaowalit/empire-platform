@@ -103,6 +103,14 @@ class StrictMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
+STATUS_WORDS = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found",
+                409: "conflict", 422: "invalid", 429: "rate_limited"}
+
+
+def status_word(status: int) -> str:
+    return STATUS_WORDS.get(status, "upstream_error" if status >= 500 else "error")
+
+
 def build_server(tasks: httpx.Client, graph: httpx.Client | None, token: Callable[[], str] | None,
                  exchange: Callable[[str, str], str] | None = None, *,
                  mint: Callable[[str], str] | None = None, server: StrictMCPServer | None = None) -> StrictMCPServer:
@@ -128,11 +136,13 @@ def build_server(tasks: httpx.Client, graph: httpx.Client | None, token: Callabl
         bearer = bearer_for("tasks-api" if client is tasks else "graph-api")
         headers = {"Authorization": f"Bearer {bearer}", "X-Empire-Channel": "mcp",
                    "X-Correlation-Id": f"mcp-{uuid.uuid4().hex}"}
-        response = client.request(method, path, headers=headers, **kwargs)
+        try:
+            response = client.request(method, path, headers=headers, **kwargs)
+        except httpx.HTTPError:
+            raise ToolFailed("unavailable") from None
         if response.status_code >= 400:
-            detail = response.json().get("detail") if response.headers.get("content-type", "").startswith("application/json") else None
-            reason = detail.get("reason") or detail.get("error") if isinstance(detail, dict) else "error"
-            raise ToolFailed(f"{response.status_code}: {reason}")
+            # Fixed wording only: upstream bodies may carry data the caller must not see in tool output or logs.
+            raise ToolFailed(f"{response.status_code}: {status_word(response.status_code)}")
         return response.json() if response.content else None
 
     def tool(name: str, model: type[Strict], description: str):
