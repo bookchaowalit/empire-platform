@@ -700,7 +700,7 @@
     {
       "id": "decisions-publisher",
       "writers": [
-        "bookchaowalit/solo-decisions:src/solo_decisions/publisher.py"
+        "bookchaowalit/decisions:src/solo_decisions/publisher.py"
       ],
       "does": "delivers the decisions outbox to the graph",
       "scopes": [
@@ -733,7 +733,7 @@
     {
       "id": "habits-publisher",
       "writers": [
-        "bookchaowalit/solo-habits:src/solo_habits/publisher.py"
+        "bookchaowalit/habits:src/solo_habits/publisher.py"
       ],
       "does": "delivers the habits outbox to the graph",
       "scopes": [
@@ -754,7 +754,7 @@
     {
       "id": "goals-publisher",
       "writers": [
-        "bookchaowalit/solo-goals:src/cellkit/server.py"
+        "bookchaowalit/goals:src/cellkit/server.py"
       ],
       "does": "delivers the goals outbox to the graph",
       "scopes": [
@@ -764,7 +764,7 @@
     {
       "id": "projects-publisher",
       "writers": [
-        "bookchaowalit/solo-projects:src/cellkit/server.py"
+        "bookchaowalit/projects-cell:src/cellkit/server.py"
       ],
       "does": "delivers the projects outbox to the graph",
       "scopes": [
@@ -774,7 +774,7 @@
     {
       "id": "roles-skills-publisher",
       "writers": [
-        "bookchaowalit/solo-roles-skills:src/cellkit/server.py"
+        "bookchaowalit/roles-skills:src/cellkit/server.py"
       ],
       "does": "delivers the roles-skills outbox to the graph",
       "scopes": [
@@ -784,7 +784,7 @@
     {
       "id": "accounts-web",
       "writers": [
-        "bookchaowalit/solo-accounts:web/lib/api.ts"
+        "bookchaowalit/accounts:web/lib/api.ts"
       ],
       "does": "serves the Accounts web app (owner-only) and applies its identity, domain, mailbox and account edits",
       "scopes": [
@@ -805,7 +805,7 @@
     {
       "id": "operating-publisher",
       "writers": [
-        "bookchaowalit/solo-operating:src/cellkit/server.py"
+        "bookchaowalit/operating-cycles:src/cellkit/server.py"
       ],
       "does": "delivers the operating outbox to the graph",
       "scopes": [
@@ -857,7 +857,7 @@
     {
       "id": "solo-web",
       "writers": [
-        "bookchaowalit/solo-web:lib/cells.ts"
+        "bookchaowalit/owner-web:lib/cells.ts"
       ],
       "does": "solo-web server side (BFF): reads every cell for the owner pages; completes tasks and logs habit days on the owner's behalf",
       "scopes": [

@@ -37,12 +37,12 @@ def setup(tmp_path: Path, local_exp: int) -> tuple[list[rotate.Target], Path, Pa
     (tokens / "goals-publisher.jwt").write_text(jwt(local_exp))
     (tokens / "solo-web.jwt").write_text(jwt(local_exp))
     checkouts = tmp_path / "checkouts"
-    (checkouts / "solo-goals").mkdir(parents=True)
-    (checkouts / "solo-web").mkdir(parents=True)
+    (checkouts / "goals").mkdir(parents=True)
+    (checkouts / "owner-web").mkdir(parents=True)
     targets = [
-        rotate.Target("goals-publisher", "railway", "solo-goals", "GOALS_PUBLISHER_TOKEN", "goals-publisher"),
-        rotate.Target("goals-publisher", "railway", "solo-goals", "GOALS_PUBLISHER_TOKEN", "goals-api"),
-        rotate.Target("solo-web", "vercel", "solo-web", "EMPIRE_CELL_TOKEN"),
+        rotate.Target("goals-publisher", "railway", "goals", "GOALS_PUBLISHER_TOKEN", "goals-publisher"),
+        rotate.Target("goals-publisher", "railway", "goals", "GOALS_PUBLISHER_TOKEN", "goals-api"),
+        rotate.Target("solo-web", "vercel", "owner-web", "EMPIRE_CELL_TOKEN"),
     ]
     return targets, tokens, checkouts
 
