@@ -946,7 +946,7 @@
     {
       "id": "owner-mcp",
       "writers": [
-        "solo-cell-kit cellkit/mcp.py (every kit cell's <cell>-mcp)",
+        "each cell repository src/cellkit/mcp.py (<cell>-mcp)",
         "solo-habits, solo-decisions, solo-notifications mcp_server.py"
       ],
       "does": "the owner's per-repository MCP servers (stdio, local): read and write the owner's records in every cell through each cell API; no delete, approve, archive, or graph publishing",
