@@ -859,13 +859,18 @@
       "writers": [
         "bookchaowalit/owner-web:lib/cells.ts"
       ],
-      "does": "solo-web server side (BFF): reads every cell for the owner pages; completes tasks and logs habit days on the owner's behalf",
+      "does": "solo-web server side (BFF): reads every cell for the owner pages (finance cells read only); completes tasks and logs habit days on the owner's behalf",
       "scopes": [
         "automation.automation-log:read",
         "automation.automation-rule:read",
         "automation.cron-job:read",
         "automation.workflow-pipeline:read",
+        "budgets.budget-plan:read",
+        "business-assets.asset-metric:read",
+        "business-assets.asset:read",
+        "cash-flow.cashflow-plan:read",
         "decisions.decision:read",
+        "finance-accounts.account:read",
         "goals.goal-context-link:read",
         "goals.goal-metric:read",
         "goals.goal-portfolio-mapping:read",
@@ -880,6 +885,10 @@
         "intake.intake-event:read",
         "intake.intake:read",
         "intake.source:read",
+        "investments.investment:read",
+        "investments.market-price:read",
+        "investments.valuation:read",
+        "liabilities.liability:read",
         "notifications.notification:read",
         "operating.cycle-goal-link:read",
         "operating.cycle-review:read",
@@ -894,6 +903,7 @@
         "projects.work-item-goal-task-link:read",
         "projects.work-item-task-link:read",
         "projects.work-item:read",
+        "reconciliations.reconciliation:read",
         "roles-skills.personal-role-context-link:read",
         "roles-skills.personal-role-goal-link:read",
         "roles-skills.personal-role-project-link:read",
@@ -906,8 +916,13 @@
         "roles-skills.role-skill-link:read",
         "roles-skills.skill-category:read",
         "roles-skills.skill:read",
+        "subscriptions.subscription-alias:read",
+        "subscriptions.subscription-review:read",
+        "subscriptions.subscription:read",
         "tasks.status:write",
-        "tasks.task:read"
+        "tasks.task:read",
+        "tax.tax-item:read",
+        "transactions.transaction:read"
       ]
     },
     {
