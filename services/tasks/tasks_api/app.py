@@ -1310,6 +1310,10 @@ def main() -> None:
                              mcp_subjects=config.mcp_subjects)
     cluster = default_cluster()
     app = create_app(lambda: cluster.connect("tasks_api"), verifier)
+    # Cells may verify tokens against this JWK Set instead of a pinned PEM (platform-identity step 1).
+    from empire_platform import jwks
+
+    jwks.register(app, config.public_key_pem)
     # Decentralized cells (own database) reach the platform and graph over HTTP through this process.
     from platform_api.routes import register
 
