@@ -700,7 +700,7 @@
     {
       "id": "decisions-publisher",
       "writers": [
-        "bookchaowalit/decisions:src/solo_decisions/publisher.py"
+        "bookchaowalit/life-decisions-api:src/solo_decisions/publisher.py"
       ],
       "does": "delivers the decisions outbox to the graph",
       "scopes": [
@@ -733,7 +733,7 @@
     {
       "id": "habits-publisher",
       "writers": [
-        "bookchaowalit/habits:src/solo_habits/publisher.py"
+        "bookchaowalit/life-habits-api:src/solo_habits/publisher.py"
       ],
       "does": "delivers the habits outbox to the graph",
       "scopes": [
@@ -754,7 +754,7 @@
     {
       "id": "goals-publisher",
       "writers": [
-        "bookchaowalit/goals:src/cellkit/server.py"
+        "bookchaowalit/life-goals-api:src/cellkit/server.py"
       ],
       "does": "delivers the goals outbox to the graph",
       "scopes": [
@@ -764,7 +764,7 @@
     {
       "id": "projects-publisher",
       "writers": [
-        "bookchaowalit/projects-cell:src/cellkit/server.py"
+        "bookchaowalit/life-projects-api:src/cellkit/server.py"
       ],
       "does": "delivers the projects outbox to the graph",
       "scopes": [
@@ -774,7 +774,7 @@
     {
       "id": "roles-skills-publisher",
       "writers": [
-        "bookchaowalit/roles-skills:src/cellkit/server.py"
+        "bookchaowalit/life-roles-skills-api:src/cellkit/server.py"
       ],
       "does": "delivers the roles-skills outbox to the graph",
       "scopes": [
@@ -784,7 +784,7 @@
     {
       "id": "accounts-web",
       "writers": [
-        "bookchaowalit/accounts:web/lib/api.ts"
+        "bookchaowalit/platform-accounts-api:web/lib/api.ts"
       ],
       "does": "serves the Accounts web app (owner-only) and applies its identity, domain, mailbox and account edits",
       "scopes": [
@@ -805,7 +805,7 @@
     {
       "id": "operating-publisher",
       "writers": [
-        "bookchaowalit/operating-cycles:src/cellkit/server.py"
+        "bookchaowalit/life-operating-cycles-api:src/cellkit/server.py"
       ],
       "does": "delivers the operating outbox to the graph",
       "scopes": [
@@ -857,7 +857,7 @@
     {
       "id": "solo-web",
       "writers": [
-        "bookchaowalit/owner-web:lib/cells.ts"
+        "bookchaowalit/life-dashboard-web:lib/cells.ts"
       ],
       "does": "solo-web server side (BFF): reads every cell for the owner pages (finance cells read only); completes tasks and logs habit days on the owner's behalf",
       "scopes": [
@@ -950,7 +950,7 @@
     {
       "id": "platform-monitor",
       "writers": [
-        "bookchaowalit/empire-platform:src/empire_platform/monitor.py"
+        "bookchaowalit/platform-empire:src/empire_platform/monitor.py"
       ],
       "does": "queues the daily platform check's warning or breach for the owner in the notifications cell",
       "scopes": [
