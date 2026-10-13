@@ -1,18 +1,20 @@
 # empire-platform
 
 Identity, workspace, authorization, workflow, and graph foundation for the
-Solo Empire domain cells. Architecture and decisions live in the Solo Empire
-repository:
+Solo Empire domain cells. Architecture and decisions live in the sibling
+`architecture-docs` checkout (or `SOLO_ARCHITECTURE_ROOT`):
 
 - ADR: `docs/superpowers/specs/2026-10-09-platform-foundation-identity-workflow-design.md`
 - Domain Cells + Empire Graph: `docs/superpowers/specs/2026-10-09-domain-cells-empire-graph-design.md`
 - Phase 1 plan: `docs/superpowers/plans/2026-10-09-platform-foundation-phase-1.md`
 
-Status: phase 1 on local PostgreSQL only: platform schema, shared
-authorization, tasks schema and import, the Tasks API with writer parity, the
-transactional outbox and publisher, a minimal Empire Graph, the MCP adapter,
-and a rehearsed cutover/rollback. No hosted database, deployment, or
-production data is involved, and SQLite writers have not been switched.
+Status: production cutover to Neon/Railway and retirement of the SQLite task
+backend were recorded on 2026-10-09. The platform includes shared authorization,
+the Tasks API, transactional outbox/publisher, Empire Graph and MCP adapter.
+Development and tests use disposable local PostgreSQL with synthetic data.
+See [recovery](docs/runbooks/recovery.md) for the executable local restore drill
+and the separate hosted recovery procedure; hosted restore readiness still
+requires its own evidence.
 
 ## Local development
 
@@ -27,7 +29,6 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 .venv/bin/empire-db psql       # connect as platform_api
 .venv/bin/empire-db stop
 .venv/bin/python -m pytest     # each run uses its own throwaway cluster
-.venv/bin/empire-tasks-import  # dry run from the Solo Empire SQLite (read-only); --apply commits locally
 .venv/bin/empire-contracts --check
 .venv/bin/tasks-api            # http://127.0.0.1:3601, tokens from empire-dev-token
 ```
@@ -62,8 +63,9 @@ skipped (exit 1 at the end). Variables (Railway only): `EMPIRE_SERVICE=recurring
 | `services/tasks/tasks_api/publisher.py` | outbox publisher (`tasks_publisher` role): oldest first, retry with backoff, at least once |
 | `services/graph/` | graph schema (nodes, aliases, edges, relation types, consents, inbox), event consumer, and the read API |
 | `services/mcp/empire_mcp/` | MCP tools `tasks.*` and `graph.*` that call the APIs with the caller's token and reject unknown arguments; `hosted.py` serves them over Streamable HTTP behind Clerk OAuth with a subject allowlist (`docs/runbooks/remote-mcp.md`) |
-| `src/empire_platform/cutover.py`, `docs/runbooks/` | backup/restore, write switch, SQLite freeze, lossless export back to SQLite |
-| `tests/` | isolation, RLS bypass, delegation, authorization conformance and TOCTOU, import, API, contract, writer parity, graph, MCP, and cutover/rollback tests |
+| `docs/runbooks/recovery.md`, `tests/test_recovery_rehearsal.py` | isolated PostgreSQL recovery, synthetic dump/restore acceptance and hosted recovery gates |
+| `docs/runbooks/tasks-cutover-and-rollback.md` | historical SQLite cutover/retirement and runtime configuration guidance |
+| `tests/` | isolation, RLS bypass, delegation, authorization conformance and TOCTOU, API, contract, writer parity, graph, MCP and recovery tests |
 
 ## Security model
 

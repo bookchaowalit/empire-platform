@@ -1,17 +1,22 @@
-# Tasks cutover and rollback
+# Tasks cutover and rollback history
 
-Status: **production cutover done and the SQLite side retired on 2026-10-09.**
-The owner waived the 7-day rollback window. The rollback steps below are kept
-as history; the SQLite task tables no longer exist (Solo Empire migration 080),
-so recovery now means restoring from a Neon branch or the archived SQLite copy. A production cutover needs owner
-approval, the writer migrations in the Solo Empire phase 1 plan (§5.1.1), and
-a hosted database, none of which exist yet.
+For current PostgreSQL/Neon recovery use [recovery.md](recovery.md). The
+cutover/retirement entries below are historical reports from 2026-10-09,
+not a current hosted inventory or a verified restore. They report production
+cutover, SQLite retirement and an owner-waived rollback window. Current hosted
+snapshot availability, retention and production recovery remain unverified
+until an isolated Neon drill produces evidence.
+
+The SQLite flow and commands below are historical only. Do not recreate the
+retired importer or switch production back to SQLite. Runtime configuration
+is guidance, not proof of an active deployment. Legacy functions retained in
+`src/empire_platform/cutover.py` are not a supported hosted recovery interface.
 
 Source of truth is exactly one side at a time. There is never a dual write:
 SQLite is frozen while PostgreSQL accepts writes, and the Tasks API write
 switch is off while SQLite accepts writes again.
 
-## Cutover
+## Historical cutover
 
 | Step | Command / mechanism | Rehearsed by |
 |---|---|---|
@@ -22,7 +27,7 @@ switch is off while SQLite accepts writes again.
 | 4. Writers switch to the API | `SOLO_EMPIRE_TASKS_BACKEND=api` plus one token per automation (`empire-automations provision --workspace owner --tokens DIR`) | `scripts/rehearse_cutover.py` on a copy of current data; Go and TypeScript writers still pending |
 | 5. API writes on | `cutover.set_writes(True)` | `test_write_switch_stops_api_writes_but_not_reads` |
 
-## Rollback
+## Historical rollback
 
 | Step | Command / mechanism | Rehearsed by |
 |---|---|---|
@@ -52,28 +57,28 @@ reports `ok`, `warn`, or `breach`:
 | Cell execution still running (lost finish call) | > 15 min | > 24 h |
 | Automation token in `~/.config/empire-platform/tokens` | expires within 7 days | expired |
 
-In Solo Empire, `task tasks:platform:monitor` (infra) runs the check and sends
-one Telegram message through the existing alert channel on `warn` or
-`breach`. A breach is a signal; the owner decides whether to roll back.
+The historical operator wrapper ran the check and sent alerts through the
+configured channel. A breach needs diagnosis and an owner decision; it does
+not authorize an external message, destructive restore or production switch.
 The cell-execution and token signals are not rollback criteria; reconcile or
 rotate per `docs/runbooks/cell-executions-and-tokens.md`.
 Not covered yet: the Tasks API 5xx rate needs request metrics from the
 hosted runtime.
 
-## Full rehearsal on current data
+## Historical rehearsal on a copy of data
 
 The rehearsal on a copy of current data (cutover, writer operations, rollback) was run before the 2026-10-09 cutover; the rehearsal script and the SQLite importer were removed afterwards, together with their rollback tests. The "Rehearsed by" test names in the tables above are history.
 
 ## Schema or data damage without leaving PostgreSQL
 
-Restore the last `pg_dump` into a new database with `cutover.restore()`,
-verify, then point the services at it. Restoring never overwrites the live
-database. Rehearsed by dropping the `tasks` schema on a copy and restoring.
+Use the isolated restore workflow and executable synthetic acceptance test in
+[recovery.md](recovery.md). A passing local drill does not verify hosted Neon
+restore or authorize pointing production services at a recovered database.
 
 ## Hosted deployment
 
-The Tasks API and the outbox publisher run on Railway against the hosted Neon
-database. One image (`Dockerfile`) serves both; `EMPIRE_SERVICE` picks the
+The Tasks API and the outbox publisher support Railway deployment against Neon.
+Current deployment state must be verified separately. One image (`Dockerfile`) serves both; `EMPIRE_SERVICE` picks the
 process. Variables are listed by name only; values live in Railway variables
 and `~/.config/empire-platform/db.env`, never in the repo.
 
@@ -141,13 +146,13 @@ Rotating means a new key pair, a new public key variable, and re-minted tokens.
 - Execution, audit, and authorization records exist only in PostgreSQL; keep
   the backup from rollback step 2.
 
-## Production cutover log (2026-10-09)
+## Historical production cutover log (2026-10-09; not reverified)
 
 | Step | Result |
 |---|---|
 | Neon | project `empire-platform` (aws-ap-southeast-1, PG 16), database `empire`, 14 migrations, runtime roles verified (no elevated attributes or memberships) |
 | Railway | project `empire-platform`, services `tasks-api` (`/health` 200, 401 without a token) and `tasks-publisher` |
-| Backup | SQLite copy and Neon snapshot branch `cutover-after-import-<timestamp>`; on Neon use a snapshot branch, because the bundled `pg_dump` has no TLS |
+| Backup | Reported SQLite copy and Neon snapshot branch `cutover-after-import-<timestamp>`; present availability is unverified. The old bundled-client TLS claim is not a current capability check; see `recovery.md` |
 | Freeze, import | SQLite task tables frozen; import 88/88 tasks, every table count equal, 0 field mismatches |
 | Identities | 22 automations with delegations and 30-day tokens in `~/.config/empire-platform/tokens` |
 | task-sync ledger | seeded 88/88 |
@@ -159,13 +164,15 @@ Rotating means a new key pair, a new public key variable, and re-minted tokens.
 Incident during cutover: the first `pg_dump` attempt failed and its traceback
 printed the migrator connection URL. The migrator password was rotated
 through the Neon API at once (old password rejected), and `backup`/`restore`
-now never echo a connection string (test in `tests/test_cutover_rollback.py`).
+errors were subsequently described as redacted. The old regression test
+`tests/test_cutover_rollback.py` was removed; do not treat that historical
+claim as current security evidence. Current drills accept no credential URLs.
 
-Rollback during the window: `tasks_backend.py use-sqlite` stops clients from
+Historical rollback during the window: `tasks_backend.py use-sqlite` stopped clients from
 using the API, then follow "Rollback" above (API writes off, export to SQLite,
 unfreeze).
 
-## Retirement (2026-10-09)
+## Historical retirement (2026-10-09; not reverified)
 
 | Step | Result |
 |---|---|
@@ -183,6 +190,7 @@ API (deletes with an owner approval, field restores from the archive). A full
 comparison then showed production equal to the archived state except for the
 archived smoke-test task 89.
 
-Recovery from now on: create a branch from a Neon point in time or from the
-snapshot branch `cutover-after-import-*`, or re-import from the archived SQLite
-copy into a new workspace.
+Current recovery: validate a verified Neon point in time or snapshot in an
+isolated branch, following [recovery.md](recovery.md). The archived SQLite task
+copy does not contain PostgreSQL identities, authorization, audit, executions,
+graph or outbox state and is not the platform recovery mechanism.
