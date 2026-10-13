@@ -31,7 +31,7 @@ export default defineRailway(() => {
     deploy: { cronSchedule: "15 17 * * *", restartPolicyType: "NEVER" },
   });
 
-  return project("empire-platform", {
+  return project("platform-empire", {
     variables: { managed: false },
     resources: [tasksApi, tasksPublisher, empireMcp, recurringGen],
   });
