@@ -661,7 +661,7 @@ def create_app(
         return to_task(row)
 
     @app.post("/v1/tasks", status_code=201, response_model=Task,
-              responses={401: {"model": Problem}, 403: {"model": Problem}})
+              responses={401: {"model": Problem}, 403: {"model": Problem}, 404: {"model": Problem}})
     def create_task(caller: Caller, body: TaskCreate, response: Response,
                     idempotency_key: Annotated[str | None, Header()] = None) -> Task:
         request = request_for(caller, "tasks.task:write", "*")
@@ -675,6 +675,7 @@ def create_app(
                         (previous["id"],),
                     ).fetchone()
                     if row:
+                        precheck(caller, request_for(caller, "tasks.task:read", str(row["id"])), not_found=True)
                         response.status_code = 200
                         return to_task(row)
         with acting(caller, request, idempotency_key) as (conn, execution):

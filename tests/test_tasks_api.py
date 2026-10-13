@@ -137,14 +137,98 @@ def test_delete_needs_an_approval(client, token, world):
     assert client.get(f"/v1/tasks/{task['id']}", headers=owner).status_code == 404
 
 
-def test_idempotent_create(client, token, world, cluster):
-    headers = {**token(world.owner, world.alpha), "Idempotency-Key": f"create-{uuid.uuid4()}"}
+@pytest.mark.parametrize("delegated", [False, True])
+def test_idempotent_create(client, token, world, cluster, delegated):
+    caller = (token(world.coach, world.alpha, delegation=world.coach_write, obo=world.owner)
+              if delegated else token(world.owner, world.alpha))
+    headers = {**caller, "Idempotency-Key": f"create-{uuid.uuid4()}"}
     first = client.post("/v1/tasks", json={"title": "Buy shoes"}, headers=headers)
     second = client.post("/v1/tasks", json={"title": "Buy shoes"}, headers=headers)
     assert (first.status_code, second.status_code) == (201, 200)
     assert first.json()["id"] == second.json()["id"]
     events = superuser(cluster, "SELECT count(*) FROM tasks.outbox WHERE subject = %s", (first.json()["urn"],))[0][0]
     assert events == 1
+
+
+@pytest.mark.parametrize("caller_kind", ["write_only_member", "revoked_owner_read", "revoked_delegated_read"])
+def test_idempotent_create_replay_requires_current_read(client, token, cluster, race, caller_kind):
+    ws, agent, delegation = race
+    owner = token(ws.owner, ws.id)
+    delegated = token(agent, ws.id, delegation=delegation, obo=ws.owner)
+    key = {"Idempotency-Key": f"read-guard-{uuid.uuid4()}"}
+    first = client.post("/v1/tasks", json={"title": "Synthetic confidential task", "notes": "Synthetic notes"},
+                        headers={**(delegated if caller_kind == "revoked_delegated_read" else owner), **key})
+    assert first.status_code == 201
+    task = first.json()
+    with cluster.connect("platform_api") as conn:
+        use_workspace(conn, ws.id)
+        if caller_kind == "write_only_member":
+            actor = add_member(conn, ws, "writer", "human")
+            role = new_id(conn)
+            conn.execute("INSERT INTO platform.roles (id, workspace_id, name) VALUES (%s, %s, 'writer')",
+                         (role, ws.id))
+            conn.execute("INSERT INTO platform.role_permissions (workspace_id, role_id, permission)"
+                         " VALUES (%s, %s, 'tasks.task:write')", (ws.id, role))
+            conn.execute("INSERT INTO platform.membership_roles (workspace_id, identity_id, role_id)"
+                         " VALUES (%s, %s, %s)", (ws.id, actor, role))
+            caller = token(actor, ws.id)
+        elif caller_kind == "revoked_owner_read":
+            actor, caller = ws.owner, owner
+            conn.execute("DELETE FROM platform.role_permissions"
+                         " WHERE role_id = %s AND permission = 'tasks.task:read'", (ws.owner_role,))
+        else:
+            actor, caller = agent, delegated
+            conn.execute("UPDATE platform.delegations SET scopes = ARRAY['tasks.task:write']::platform.permission[]"
+                         " WHERE id = %s", (delegation,))
+        conn.commit()
+    assert client.get(f"/v1/tasks/{task['id']}", headers=caller).status_code == 404
+    denial_query = (
+        "SELECT count(*) FROM platform.authorization_decisions WHERE actor_identity_id = %s"
+        " AND action = 'tasks.task:read' AND resource_id = %s AND decision = 'deny'"
+    )
+    before = superuser(cluster, denial_query, (actor, task["id"]))[0][0]
+    replay = client.post("/v1/tasks", json={"title": "Retry"}, headers={**caller, **key})
+    assert replay.status_code == 404
+    assert replay.json() == {"detail": {"error": "not_found"}}
+    assert superuser(cluster, denial_query, (actor, task["id"]))[0][0] == before + 1
+    assert superuser(cluster, "SELECT count(*) FROM tasks.outbox WHERE subject = %s", (task["urn"],))[0][0] == 1
+
+
+@pytest.mark.parametrize("delegated", [False, True])
+def test_idempotent_create_replay_requires_token_read_scope(client, token, cluster, keys, race, delegated):
+    ws, agent, delegation = race
+    caller = (token(agent, ws.id, delegation=delegation, obo=ws.owner)
+              if delegated else token(ws.owner, ws.id))
+    private_pem, public_pem = keys
+    claims = jwt.decode(caller["Authorization"].removeprefix("Bearer "), public_pem,
+                        algorithms=["RS256"], audience="tasks-api", issuer=ISSUER)
+    claims["scope"] = "tasks.task:write"
+    headers = {"Authorization": f"Bearer {jwt.encode(claims, private_pem, algorithm='RS256')}",
+               "Idempotency-Key": f"scoped-replay-{uuid.uuid4()}"}
+    first = client.post("/v1/tasks", json={"title": "Write-only scoped create"}, headers=headers)
+    assert first.status_code == 201
+    task = first.json()
+    assert client.get(f"/v1/tasks/{task['id']}", headers=headers).status_code == 404
+    replay = client.post("/v1/tasks", json={"title": "Retry"}, headers=headers)
+    assert replay.status_code == 404
+    assert replay.json() == {"detail": {"error": "not_found"}}
+    assert superuser(cluster, "SELECT count(*) FROM tasks.outbox WHERE subject = %s", (task["urn"],))[0][0] == 1
+
+
+def test_idempotent_create_key_is_workspace_bound(client, token, world, cluster):
+    key = {"Idempotency-Key": f"workspace-replay-{uuid.uuid4()}"}
+    alpha = {**token(world.owner, world.alpha), **key}
+    beta = {**token(world.outsider, world.beta), **key}
+    first = client.post("/v1/tasks", json={"title": "Alpha synthetic task"}, headers=alpha)
+    other = client.post("/v1/tasks", json={"title": "Beta synthetic task"}, headers=beta)
+    assert (first.status_code, other.status_code) == (201, 201)
+    assert first.json()["id"] != other.json()["id"]
+    for headers, created in ((alpha, first), (beta, other)):
+        replay = client.post("/v1/tasks", json={"title": "Retry"}, headers=headers)
+        assert replay.status_code == 200
+        assert replay.json() == created.json()
+        assert superuser(cluster, "SELECT count(*) FROM tasks.outbox WHERE subject = %s",
+                         (created.json()["urn"],))[0][0] == 1
 
 
 def test_read_only_member_cannot_write(client, token, world):
@@ -297,6 +381,26 @@ def revoke_after_precheck(monkeypatch, cluster, workspace_id, statement, params)
 
     monkeypatch.setattr(app_module, "authorize", authorize_then_change)
     return state
+
+
+def test_idempotent_create_replay_rechecks_live_delegation(client, token, cluster, race, monkeypatch):
+    ws, agent, delegation = race
+    headers = {**token(agent, ws.id, delegation=delegation, obo=ws.owner),
+               "Idempotency-Key": f"revoked-replay-{uuid.uuid4()}"}
+    first = client.post("/v1/tasks", json={"title": "Before revocation"}, headers=headers)
+    assert first.status_code == 201
+    state = revoke_after_precheck(
+        monkeypatch, cluster, ws.id, "UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (delegation,))
+    replay = client.post("/v1/tasks", json={"title": "Retry"}, headers=headers)
+    assert state["done"]
+    assert replay.status_code == 404
+    assert replay.json() == {"detail": {"error": "not_found"}}
+    denied = superuser(
+        cluster, "SELECT count(*) FROM platform.authorization_decisions WHERE delegation_id = %s"
+        " AND action = 'tasks.task:read' AND resource_id = %s AND reason = 'delegation_invalid'",
+        (delegation, first.json()["id"]))[0][0]
+    assert denied == 1
+    assert superuser(cluster, "SELECT count(*) FROM tasks.outbox WHERE subject = %s", (first.json()["urn"],))[0][0] == 1
 
 
 def test_grantor_losing_permission_after_precheck_is_enforced(client, token, cluster, race, monkeypatch):
