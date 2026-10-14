@@ -30,7 +30,7 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 import psycopg
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
@@ -98,8 +98,11 @@ class Ingested(BaseModel):
 
 
 def register(app: FastAPI, *, connect_platform: Callable[[], psycopg.Connection], platform_verifier: TokenVerifier,
-             graph_verifier: TokenVerifier) -> None:
-    """Add the platform routes to an existing app (the tasks-api process hosts them)."""
+             graph_verifier: TokenVerifier, identity_shadow: Callable[..., None] | None = None) -> None:
+    """Add the platform routes to an existing app (the tasks-api process hosts them).
+
+    ``identity_shadow`` (see ``identity_shadow.py``) receives every answered decision after the response.
+    """
 
     def caller(verifier: TokenVerifier, authorization: str | None, channel: str | None) -> Principal:
         try:
@@ -138,12 +141,16 @@ def register(app: FastAPI, *, connect_platform: Callable[[], psycopg.Connection]
             raise HTTPException(status_code=403, detail={"error": "deny", "reason": "scope_insufficient"})
 
     @app.post("/v1/authz/decide", response_model=Decision, tags=["platform"])
-    def decide(body: Decide, authorization: Auth = None, x_empire_channel: Channel = None) -> Decision:
+    def decide(body: Decide, background: BackgroundTasks, authorization: Auth = None,
+               x_empire_channel: Channel = None) -> Decision:
         principal = caller(platform_verifier, authorization, x_empire_channel)
         scoped(principal, body.action)
         with bound(principal, connect_platform) as conn:
             result = authorize(conn, request_for(principal, body))
             conn.commit()
+        if identity_shadow is not None:
+            background.add_task(identity_shadow, body.model_dump(mode="json", exclude_none=True), authorization,
+                                x_empire_channel, result.decision, result.reason)
         return Decision(decision=result.decision, reason=result.reason, decision_id=result.decision_id)
 
     @app.post("/v1/executions", status_code=201, response_model=Execution, tags=["platform"],

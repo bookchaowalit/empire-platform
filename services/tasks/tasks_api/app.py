@@ -1319,9 +1319,16 @@ def main() -> None:
 
     # Runs as tasks_api: it holds only the platform and graph entry points (authorize, cell executions,
     # audit, graph.ingest_cell_event), never platform or graph table grants.
+    # platform-identity step 3: mirror answered decisions to the identity service when IDENTITY_SHADOW_URL is set.
+    from platform_api.identity_shadow import IdentityShadow, enable_logging, shadow_url
+
+    mirror_url = shadow_url(os.environ.get("IDENTITY_SHADOW_URL"))
+    if mirror_url:
+        enable_logging()
     register(app, connect_platform=lambda: cluster.connect("tasks_api"),
              platform_verifier=TokenVerifier(config.public_key_pem, config.issuer, audience="platform-api",
                                              max_lifetime=config.max_lifetime),
              graph_verifier=TokenVerifier(config.public_key_pem, config.issuer, audience="graph-api",
-                                          max_lifetime=config.max_lifetime))
+                                          max_lifetime=config.max_lifetime),
+             identity_shadow=IdentityShadow(mirror_url) if mirror_url else None)
     uvicorn.run(app, host=config.host, port=config.port)

@@ -172,7 +172,7 @@ def bootstrap(cluster: Cluster) -> None:
     with cluster.connect(SUPERUSER, DATABASE, autocommit=True) as conn:
         conn.execute(f"REVOKE ALL ON DATABASE {DATABASE} FROM PUBLIC")
         conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api,"
-                     " platform_monitor")
+                     " platform_monitor, identity_api")
         conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
 

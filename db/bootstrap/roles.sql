@@ -11,6 +11,8 @@
 -- graph_api        the graph service: its own schema and platform.can only.
 -- platform_monitor reads counts, versions, outbox state, and decision codes
 --                  across workspaces for the daily check; never task content.
+-- identity_api     platform-identity: platform.authorize and read-only
+--                  identity and membership columns; no writes.
 
 DO $$
 BEGIN
@@ -31,6 +33,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'platform_monitor') THEN
         CREATE ROLE platform_monitor LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'identity_api') THEN
+        CREATE ROLE identity_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
     END IF;
 END
 $$;

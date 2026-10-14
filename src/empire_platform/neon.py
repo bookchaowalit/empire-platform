@@ -38,7 +38,7 @@ from empire_platform.devdb import DATABASE, HOSTED_SECRETS, HostedCluster, migra
 
 API = "https://console.neon.tech/api/v2"
 MIGRATOR = "empire_migrator"
-RUNTIME_ROLES = ("platform_api", "tasks_api", "tasks_publisher", "graph_api", "platform_monitor")
+RUNTIME_ROLES = ("platform_api", "tasks_api", "tasks_publisher", "graph_api", "platform_monitor", "identity_api")
 
 
 class NeonError(RuntimeError):
