@@ -176,6 +176,7 @@ def probe(api: str | None, timeout: float = 5.0) -> bool | None:
     if not api:
         return None
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected -- health probe of the operator-configured platform API URL (CLI/env), not request input
         with urllib.request.urlopen(
             f"{api.rstrip('/')}/health", timeout=timeout
         ) as response:

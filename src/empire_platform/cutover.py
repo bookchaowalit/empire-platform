@@ -211,6 +211,7 @@ def export_to_sqlite(
                 report.inserted += 1
         for task in tasks:
             values = _row_values(task, ids)
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- local SQLite cutover: table/column names come from fixed mappings (_row_values keys, LINK_TABLES); values are bound as ? parameters
             src.execute(
                 f"UPDATE tasks SET {', '.join(f'{c} = ?' for c in values)} WHERE id = ?",
                 [*values.values(), ids[str(task["id"])]],
@@ -237,6 +238,7 @@ def export_to_sqlite(
             if table == "task_skill_links":
                 extra["match_reason"] = "linked in empire-platform"
             columns = ["task_id", column, *extra]
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- local SQLite cutover: table/column names come from fixed mappings (_row_values keys, LINK_TABLES); values are bound as ? parameters
             src.execute(
                 f"INSERT OR IGNORE INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
                 [

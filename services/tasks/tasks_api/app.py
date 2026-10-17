@@ -823,6 +823,7 @@ def create_app(
         precheck(caller, request_for(caller, "tasks.task:read", "*"), not_found=False)
         where, params = filters
         with bound(caller) as conn:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- the WHERE text is a fixed template from task_filters; every value is bound as a named %(...)s parameter
             total = conn.execute(
                 f"SELECT count(*) AS n FROM tasks.tasks{where}", params
             ).fetchone()["n"]
@@ -843,6 +844,7 @@ def create_app(
     )
     def get_by_number(caller: Caller, number: int) -> Task:
         with bound(caller) as conn:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- TASK_FIELDS is a module constant; the value is bound as a %s parameter
             row = conn.execute(
                 f"SELECT {TASK_FIELDS} FROM tasks.tasks WHERE legacy_id = %s", (number,)
             ).fetchone()

@@ -196,17 +196,20 @@ def ensure_runtime_roles(migrator_url: str, existing: dict[str, str]) -> dict[st
                 "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
             ).fetchone()
             verb = "ALTER" if present else "CREATE"
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- DDL is composed with psycopg sql.SQL/sql.Identifier/sql.Literal, which quote identifiers and literals
             conn.execute(
                 sql.SQL(
                     "{} ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT PASSWORD {}"
                 ).format(sql.SQL(verb), sql.Identifier(role), sql.Literal(password))
             )
             passwords[role] = password
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- DDL is composed with psycopg sql.SQL/sql.Identifier/sql.Literal, which quote identifiers and literals
         conn.execute(
             sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(
                 sql.Identifier(DATABASE)
             )
         )
+        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- DDL is composed with psycopg sql.SQL/sql.Identifier/sql.Literal, which quote identifiers and literals
         conn.execute(
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                 sql.Identifier(DATABASE),
