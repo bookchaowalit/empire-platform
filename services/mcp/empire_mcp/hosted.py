@@ -492,9 +492,9 @@ class HostedMCPServer(StrictMCPServer):
         super().__init__(*args, **kwargs)
         self.subjects = dict(subjects)
 
-    async def call_tool(
+    async def call_tool(  # type: ignore[override]
         self, name: str, arguments: dict[str, Any], context: Any = None
-    ):  # type: ignore[override]
+    ):
         access = _access_token(context)
         subject = access.subject if access is not None else None
         mapped = self.subjects.get(subject) if subject else None
