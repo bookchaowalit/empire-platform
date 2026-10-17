@@ -2,8 +2,18 @@ import json
 
 from empire_platform import monitor
 
-REPORT = {"level": "breach", "checked_at": "2026-10-11T02:17:00+00:00",
-          "findings": [{"level": "breach", "check": "token_expired", "workspace": None, "detail": "token x expired"}]}
+REPORT = {
+    "level": "breach",
+    "checked_at": "2026-10-11T02:17:00+00:00",
+    "findings": [
+        {
+            "level": "breach",
+            "check": "token_expired",
+            "workspace": None,
+            "detail": "token x expired",
+        }
+    ],
+}
 
 
 class Response:
@@ -35,7 +45,9 @@ def test_breach_is_queued_once_per_day_without_leaking_the_token(monkeypatch):
     assert seen["body"]["notification_type"] == "platform_check"
     assert seen["body"]["severity"] == "critical"
     assert seen["body"]["dedupe_key"] == "platform-check:2026-10-11:breach"
-    assert "Runbook" in seen["body"]["message"] and "tok-secret" not in json.dumps(seen["body"])
+    assert "Runbook" in seen["body"]["message"] and "tok-secret" not in json.dumps(
+        seen["body"]
+    )
 
 
 def test_api_errors_become_short_messages(monkeypatch):

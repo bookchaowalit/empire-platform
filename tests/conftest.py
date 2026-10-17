@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
@@ -18,7 +18,9 @@ from empire_platform.devdb import Cluster, bootstrap, migrate
 
 @pytest.fixture(scope="session")
 def cluster() -> Iterator[Cluster]:
-    root = Path(tempfile.mkdtemp(prefix="ep-"))  # short path keeps the socket under 107 chars
+    root = Path(
+        tempfile.mkdtemp(prefix="ep-")
+    )  # short path keeps the socket under 107 chars
     cluster = Cluster(root / "data", root / "sock")
     cluster.init()
     cluster.start()
@@ -41,7 +43,9 @@ def api(cluster: Cluster) -> Iterator[psycopg.Connection]:
 
 def use_workspace(conn: psycopg.Connection, workspace_id: uuid.UUID | None) -> None:
     """Equivalent of SET LOCAL app.workspace_id for the current transaction."""
-    conn.execute("SELECT set_config('app.workspace_id', %s, true)", (str(workspace_id or ""),))
+    conn.execute(
+        "SELECT set_config('app.workspace_id', %s, true)", (str(workspace_id or ""),)
+    )
 
 
 def new_id(conn: psycopg.Connection) -> uuid.UUID:
@@ -56,7 +60,9 @@ class Workspace:
     members: dict[str, uuid.UUID] = field(default_factory=dict)
 
 
-def create_workspace(conn: psycopg.Connection, slug: str, owner_permissions: list[str]) -> Workspace:
+def create_workspace(
+    conn: psycopg.Connection, slug: str, owner_permissions: list[str]
+) -> Workspace:
     """Create a workspace, its human owner, and an owner role through RLS."""
     workspace_id, owner_id, role_id = new_id(conn), new_id(conn), new_id(conn)
     use_workspace(conn, workspace_id)
@@ -88,7 +94,9 @@ def create_workspace(conn: psycopg.Connection, slug: str, owner_permissions: lis
     return Workspace(workspace_id, owner_id, role_id)
 
 
-def add_member(conn: psycopg.Connection, workspace: Workspace, name: str, kind: str) -> uuid.UUID:
+def add_member(
+    conn: psycopg.Connection, workspace: Workspace, name: str, kind: str
+) -> uuid.UUID:
     identity_id = new_id(conn)
     use_workspace(conn, workspace.id)
     conn.execute(
@@ -103,20 +111,37 @@ def add_member(conn: psycopg.Connection, workspace: Workspace, name: str, kind: 
     return identity_id
 
 
-def delegate(conn: psycopg.Connection, workspace: Workspace, grantor: uuid.UUID, grantee: uuid.UUID,
-             scopes: list[str], expires_in: timedelta = timedelta(hours=1)) -> uuid.UUID:
+def delegate(
+    conn: psycopg.Connection,
+    workspace: Workspace,
+    grantor: uuid.UUID,
+    grantee: uuid.UUID,
+    scopes: list[str],
+    expires_in: timedelta = timedelta(hours=1),
+) -> uuid.UUID:
     delegation_id = new_id(conn)
     use_workspace(conn, workspace.id)
     conn.execute(
         "INSERT INTO platform.delegations (id, workspace_id, grantor_identity_id, grantee_identity_id,"
         " scopes, expires_at) VALUES (%s, %s, %s, %s, %s::platform.permission[], %s)",
-        (delegation_id, workspace.id, grantor, grantee, scopes, datetime.now(timezone.utc) + expires_in),
+        (
+            delegation_id,
+            workspace.id,
+            grantor,
+            grantee,
+            scopes,
+            datetime.now(UTC) + expires_in,
+        ),
     )
     return delegation_id
 
 
-def has_permission(conn: psycopg.Connection, identity: uuid.UUID, permission: str,
-                   delegation: uuid.UUID | None = None) -> bool:
+def has_permission(
+    conn: psycopg.Connection,
+    identity: uuid.UUID,
+    permission: str,
+    delegation: uuid.UUID | None = None,
+) -> bool:
     return conn.execute(
         "SELECT platform.has_permission(%s, %s, %s)", (identity, permission, delegation)
     ).fetchone()[0]

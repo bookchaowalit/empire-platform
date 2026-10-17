@@ -6,8 +6,14 @@ from datetime import timedelta
 
 import psycopg
 import pytest
-
-from conftest import add_member, create_workspace, delegate, has_permission, new_id, use_workspace
+from conftest import (
+    add_member,
+    create_workspace,
+    delegate,
+    has_permission,
+    new_id,
+    use_workspace,
+)
 
 READ, WRITE, DELETE = "tasks.task:read", "tasks.task:write", "tasks.task:delete"
 
@@ -22,12 +28,20 @@ def workspace(api):
 
 def test_delegation_cannot_exceed_the_grantor(api, workspace):
     with pytest.raises(psycopg.errors.InsufficientPrivilege, match="tasks.task:delete"):
-        delegate(api, workspace, workspace.owner, workspace.members["coach"], [READ, DELETE])
+        delegate(
+            api, workspace, workspace.owner, workspace.members["coach"], [READ, DELETE]
+        )
 
 
 def test_grantor_without_any_matching_permission_cannot_delegate(api, workspace):
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        delegate(api, workspace, workspace.members["partner"], workspace.members["coach"], [READ])
+        delegate(
+            api,
+            workspace,
+            workspace.members["partner"],
+            workspace.members["coach"],
+            [READ],
+        )
 
 
 def test_delegation_only_goes_to_non_human_members(api, workspace):
@@ -39,7 +53,8 @@ def test_delegation_requires_the_grantee_to_be_a_member(api, workspace):
     outsider = new_id(api)
     use_workspace(api, workspace.id)
     api.execute(
-        "INSERT INTO platform.identities (id, kind, display_name) VALUES (%s, 'agent', 'stranger')", (outsider,)
+        "INSERT INTO platform.identities (id, kind, display_name) VALUES (%s, 'agent', 'stranger')",
+        (outsider,),
     )
     with pytest.raises(psycopg.errors.CheckViolation):
         delegate(api, workspace, workspace.owner, outsider, [READ])
@@ -76,10 +91,14 @@ def test_delegation_follows_the_grantor_losing_a_permission(api, workspace):
 
 def test_expired_or_revoked_delegations_grant_nothing(api, workspace):
     coach = workspace.members["coach"]
-    expired = delegate(api, workspace, workspace.owner, coach, [READ], expires_in=timedelta(seconds=-1))
+    expired = delegate(
+        api, workspace, workspace.owner, coach, [READ], expires_in=timedelta(seconds=-1)
+    )
     assert not has_permission(api, coach, READ, expired)
     revoked = delegate(api, workspace, workspace.owner, coach, [READ])
-    api.execute("UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (revoked,))
+    api.execute(
+        "UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (revoked,)
+    )
     assert not has_permission(api, coach, READ, revoked)
 
 
@@ -121,10 +140,11 @@ def insert_execution(api, workspace, executed_by, on_behalf_of, delegation=None)
 
 def test_agent_cannot_act_for_someone_without_their_delegation(api, workspace):
     coach = workspace.members["coach"]
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with api.transaction():
-            insert_execution(api, workspace, coach, workspace.owner)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), api.transaction():
+        insert_execution(api, workspace, coach, workspace.owner)
     delegation = delegate(api, workspace, workspace.owner, coach, [READ])
     insert_execution(api, workspace, coach, workspace.owner, delegation)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        insert_execution(api, workspace, coach, workspace.members["partner"], delegation)
+        insert_execution(
+            api, workspace, coach, workspace.members["partner"], delegation
+        )

@@ -4,12 +4,27 @@ from __future__ import annotations
 
 import psycopg
 import pytest
-
-from conftest import add_member, create_workspace, delegate, has_permission, new_id, use_workspace
+from conftest import (
+    add_member,
+    create_workspace,
+    delegate,
+    has_permission,
+    new_id,
+    use_workspace,
+)
 
 TENANT_TABLES = [
-    "workspaces", "memberships", "roles", "role_permissions", "membership_roles",
-    "policies", "delegations", "approvals", "executions", "audit_events", "identities",
+    "workspaces",
+    "memberships",
+    "roles",
+    "role_permissions",
+    "membership_roles",
+    "policies",
+    "delegations",
+    "approvals",
+    "executions",
+    "audit_events",
+    "identities",
 ]
 
 
@@ -48,9 +63,13 @@ def count(conn, table: str) -> int:
 def rows_of(conn, table: str, workspace) -> int:
     """Rows that belong to ``workspace``, as far as the current context can see."""
     if table == "identities":
-        return conn.execute("SELECT count(*) FROM platform.identities WHERE id = %s", (workspace.owner,)).fetchone()[0]
+        return conn.execute(
+            "SELECT count(*) FROM platform.identities WHERE id = %s", (workspace.owner,)
+        ).fetchone()[0]
     column = "id" if table == "workspaces" else "workspace_id"
-    return conn.execute(f"SELECT count(*) FROM platform.{table} WHERE {column} = %s", (workspace.id,)).fetchone()[0]
+    return conn.execute(
+        f"SELECT count(*) FROM platform.{table} WHERE {column} = %s", (workspace.id,)
+    ).fetchone()[0]
 
 
 @pytest.mark.parametrize("table", TENANT_TABLES)
@@ -73,23 +92,34 @@ def test_cannot_write_into_another_workspace(api, two_workspaces):
     use_workspace(api, b.id)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         api.execute(
-            "INSERT INTO platform.roles (workspace_id, name) VALUES (%s, 'intruder')", (a.id,)
+            "INSERT INTO platform.roles (workspace_id, name) VALUES (%s, 'intruder')",
+            (a.id,),
         )
 
 
 def test_cannot_update_or_delete_another_workspace(api, two_workspaces):
     a, b = two_workspaces
     use_workspace(api, b.id)
-    assert api.execute(
-        "UPDATE platform.roles SET name = 'hijacked' WHERE workspace_id = %s", (a.id,)
-    ).rowcount == 0
-    assert api.execute(
-        "DELETE FROM platform.membership_roles WHERE workspace_id = %s", (a.id,)
-    ).rowcount == 0
+    assert (
+        api.execute(
+            "UPDATE platform.roles SET name = 'hijacked' WHERE workspace_id = %s",
+            (a.id,),
+        ).rowcount
+        == 0
+    )
+    assert (
+        api.execute(
+            "DELETE FROM platform.membership_roles WHERE workspace_id = %s", (a.id,)
+        ).rowcount
+        == 0
+    )
     use_workspace(api, a.id)
-    assert api.execute(
-        "SELECT count(*) FROM platform.roles WHERE name = 'hijacked'"
-    ).fetchone()[0] == 0
+    assert (
+        api.execute(
+            "SELECT count(*) FROM platform.roles WHERE name = 'hijacked'"
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_permissions_do_not_cross_workspaces(api, two_workspaces):

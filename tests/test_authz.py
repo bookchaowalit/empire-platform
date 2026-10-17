@@ -11,11 +11,16 @@ from pathlib import Path
 
 import psycopg
 import pytest
-
 from conftest import add_member, create_workspace, delegate, new_id, use_workspace
 from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 
-CONFORMANCE = Path(__file__).resolve().parents[1] / "contracts" / "authz" / "v1" / "conformance.json"
+CONFORMANCE = (
+    Path(__file__).resolve().parents[1]
+    / "contracts"
+    / "authz"
+    / "v1"
+    / "conformance.json"
+)
 SPEC = json.loads(CONFORMANCE.read_text(encoding="utf-8"))
 
 
@@ -25,7 +30,9 @@ def build_world(conn) -> dict[str, uuid.UUID]:
     names: dict[str, uuid.UUID] = {}
     workspaces = {}
     for slug, spec in world["workspaces"].items():
-        ws = create_workspace(conn, f"{slug}-{uuid.uuid4().hex[:8]}", spec["owner_permissions"])
+        ws = create_workspace(
+            conn, f"{slug}-{uuid.uuid4().hex[:8]}", spec["owner_permissions"]
+        )
         workspaces[slug] = ws
         names[slug] = ws.id
         names[spec["owner"]] = ws.owner
@@ -35,15 +42,29 @@ def build_world(conn) -> dict[str, uuid.UUID]:
     for name, spec in world["delegations"].items():
         ws = workspaces[spec["workspace"]]
         expires = timedelta(seconds=-1) if spec.get("expired") else timedelta(hours=1)
-        names[name] = delegate(conn, ws, names[spec["grantor"]], names[spec["grantee"]], spec["scopes"], expires)
+        names[name] = delegate(
+            conn,
+            ws,
+            names[spec["grantor"]],
+            names[spec["grantee"]],
+            spec["scopes"],
+            expires,
+        )
         if spec.get("revoked"):
-            conn.execute("UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (names[name],))
+            conn.execute(
+                "UPDATE platform.delegations SET revoked_at = now() WHERE id = %s",
+                (names[name],),
+            )
     for slug, policies in world["policies"].items():
         use_workspace(conn, workspaces[slug].id)
         for policy in policies:
             conn.execute(
                 "INSERT INTO platform.policies (workspace_id, permission, requires_approval) VALUES (%s, %s, %s)",
-                (workspaces[slug].id, policy["permission"], policy["requires_approval"]),
+                (
+                    workspaces[slug].id,
+                    policy["permission"],
+                    policy["requires_approval"],
+                ),
             )
     for name, spec in world["approvals"].items():
         ws = workspaces[spec["workspace"]]
@@ -53,12 +74,21 @@ def build_world(conn) -> dict[str, uuid.UUID]:
         conn.execute(
             "INSERT INTO platform.approvals (id, workspace_id, requested_action, approver_identity_id, decision, decided_at)"
             " VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)",
-            (names[name], ws.id, spec["action"], ws.owner if decided else None, spec["decision"], decided),
+            (
+                names[name],
+                ws.id,
+                spec["action"],
+                ws.owner if decided else None,
+                spec["decision"],
+                decided,
+            ),
         )
     return names
 
 
-def request_from(case: dict, names: dict[str, uuid.UUID], *, channel: str = "api") -> Request:
+def request_from(
+    case: dict, names: dict[str, uuid.UUID], *, channel: str = "api"
+) -> Request:
     spec = case["request"]
     return Request(
         actor=names[spec["actor"]],
@@ -72,7 +102,9 @@ def request_from(case: dict, names: dict[str, uuid.UUID], *, channel: str = "api
     )
 
 
-@pytest.mark.parametrize("case", SPEC["cases"], ids=[case["name"] for case in SPEC["cases"]])
+@pytest.mark.parametrize(
+    "case", SPEC["cases"], ids=[case["name"] for case in SPEC["cases"]]
+)
 def test_conformance(api, case):
     names = build_world(api)
     use_workspace(api, names[case["bound_to"]])
@@ -83,28 +115,49 @@ def test_conformance(api, case):
 def test_every_decision_is_recorded_in_its_workspace(api):
     names = build_world(api)
     use_workspace(api, names["alpha"])
-    before = api.execute("SELECT count(*) FROM platform.authorization_decisions").fetchone()[0]
-    case = next(c for c in SPEC["cases"] if c["name"] == "agent beyond a read delegation")
+    before = api.execute(
+        "SELECT count(*) FROM platform.authorization_decisions"
+    ).fetchone()[0]
+    case = next(
+        c for c in SPEC["cases"] if c["name"] == "agent beyond a read delegation"
+    )
     decision = authorize(api, request_from(case, names, channel="mcp"))
     row = api.execute(
         "SELECT actor_identity_id, action, decision, reason, channel, delegation_id, locked"
-        " FROM platform.authorization_decisions WHERE id = %s", (decision.decision_id,)
+        " FROM platform.authorization_decisions WHERE id = %s",
+        (decision.decision_id,),
     ).fetchone()
-    assert row == (names["coach"], "tasks.task:write", "deny", "no_permission", "mcp", names["coach_read"], False)
-    assert api.execute("SELECT count(*) FROM platform.authorization_decisions").fetchone()[0] == before + 1
+    assert row == (
+        names["coach"],
+        "tasks.task:write",
+        "deny",
+        "no_permission",
+        "mcp",
+        names["coach_read"],
+        False,
+    )
+    assert (
+        api.execute("SELECT count(*) FROM platform.authorization_decisions").fetchone()[
+            0
+        ]
+        == before + 1
+    )
     use_workspace(api, names["beta"])
-    assert api.execute(
-        "SELECT count(*) FROM platform.authorization_decisions WHERE id = %s", (decision.decision_id,)
-    ).fetchone()[0] == 0
+    assert (
+        api.execute(
+            "SELECT count(*) FROM platform.authorization_decisions WHERE id = %s",
+            (decision.decision_id,),
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_decision_records_are_append_only(api):
     names = build_world(api)
     use_workspace(api, names["alpha"])
     authorize(api, request_from(SPEC["cases"][0], names))
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with api.transaction():
-            api.execute("DELETE FROM platform.authorization_decisions")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), api.transaction():
+        api.execute("DELETE FROM platform.authorization_decisions")
 
 
 def test_enforce_raises_unless_allowed(api):
@@ -124,8 +177,15 @@ def committed_world(cluster) -> dict[str, uuid.UUID]:
 
 
 def coach_read(names) -> Request:
-    return Request(names["coach"], names["alpha"], "tasks.task:read", Resource("task", "*", names["alpha"]),
-                   channel="workflow", delegation=names["coach_read"], on_behalf_of=names["owner"])
+    return Request(
+        names["coach"],
+        names["alpha"],
+        "tasks.task:read",
+        Resource("task", "*", names["alpha"]),
+        channel="workflow",
+        delegation=names["coach_read"],
+        on_behalf_of=names["owner"],
+    )
 
 
 def test_revocation_after_queueing_is_seen_when_the_worker_acts(cluster):
@@ -137,7 +197,10 @@ def test_revocation_after_queueing_is_seen_when_the_worker_acts(cluster):
         queue.commit()
     with cluster.connect("platform_api") as owner:
         use_workspace(owner, names["alpha"])
-        owner.execute("UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (names["coach_read"],))
+        owner.execute(
+            "UPDATE platform.delegations SET revoked_at = now() WHERE id = %s",
+            (names["coach_read"],),
+        )
         owner.commit()
     with cluster.connect("platform_api") as worker:
         use_workspace(worker, names["alpha"])
@@ -158,7 +221,10 @@ def test_revocation_waits_for_an_acting_transaction(cluster):
     def revoke() -> None:
         with cluster.connect("platform_api") as owner:
             use_workspace(owner, names["alpha"])
-            owner.execute("UPDATE platform.delegations SET revoked_at = now() WHERE id = %s", (names["coach_read"],))
+            owner.execute(
+                "UPDATE platform.delegations SET revoked_at = now() WHERE id = %s",
+                (names["coach_read"],),
+            )
             owner.commit()
             revoked_at["t"] = time.monotonic()
 

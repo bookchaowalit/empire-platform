@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import json
 import re
-import os
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +29,16 @@ from psycopg.rows import dict_row
 
 from empire_platform.devdb import SUPERUSER, Cluster, pg_bin_dir
 
-FROZEN_TABLES = ("tasks", "task_assignments", "task_goal_links", "task_project_links", "task_context_links",
-                 "task_skill_links", "task_role_suggestions", "task_types")
+FROZEN_TABLES = (
+    "tasks",
+    "task_assignments",
+    "task_goal_links",
+    "task_project_links",
+    "task_context_links",
+    "task_skill_links",
+    "task_role_suggestions",
+    "task_types",
+)
 LINK_TABLES = {
     "goal": ("task_goal_links", "goal_id"),
     "project": ("task_project_links", "project_id"),
@@ -46,14 +53,26 @@ class ToolFailed(RuntimeError):
 
 def _run_tool(args: list[str], conninfo: str) -> None:
     """Run pg_dump/pg_restore; the connection string never appears in an error or traceback."""
-    result = subprocess.run([*args, "--dbname", conninfo], capture_output=True, text=True)
+    result = subprocess.run(
+        [*args, "--dbname", conninfo],
+        capture_output=True,
+        text=True,
+        check=False,  # returncode is checked below without echoing the connection string
+    )
     if result.returncode != 0:
-        detail = re.sub(r"postgres(ql)?://\S+", "<connection>", result.stderr or "")[-400:]
-        raise ToolFailed(f"{Path(args[0]).name} exited {result.returncode}: {detail.strip()}")
+        detail = re.sub(r"postgres(ql)?://\S+", "<connection>", result.stderr or "")[
+            -400:
+        ]
+        raise ToolFailed(
+            f"{Path(args[0]).name} exited {result.returncode}: {detail.strip()}"
+        )
 
 
 def backup(cluster: Cluster, path: Path, dbname: str = "empire") -> Path:
-    _run_tool([str(pg_bin_dir() / "pg_dump"), "-Fc", "-f", str(path)], cluster.conninfo(SUPERUSER, dbname))
+    _run_tool(
+        [str(pg_bin_dir() / "pg_dump"), "-Fc", "-f", str(path)],
+        cluster.conninfo(SUPERUSER, dbname),
+    )
     return path
 
 
@@ -61,12 +80,18 @@ def restore(cluster: Cluster, path: Path, dbname: str) -> None:
     """Restore into a new database ``dbname`` (never over the live one)."""
     with cluster.connect(SUPERUSER, "postgres", autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{dbname}" OWNER empire_migrator')
-    _run_tool([str(pg_bin_dir() / "pg_restore"), "--exit-on-error", str(path)], cluster.conninfo(SUPERUSER, dbname))
+    _run_tool(
+        [str(pg_bin_dir() / "pg_restore"), "--exit-on-error", str(path)],
+        cluster.conninfo(SUPERUSER, dbname),
+    )
 
 
 def set_writes(cluster: Cluster, enabled: bool, dbname: str = "empire") -> None:
     with cluster.connect("empire_migrator", dbname) as conn:
-        conn.execute("UPDATE tasks.settings SET value = %s WHERE key = 'writes_enabled'", ("true" if enabled else "false",))
+        conn.execute(
+            "UPDATE tasks.settings SET value = %s WHERE key = 'writes_enabled'",
+            ("true" if enabled else "false",),
+        )
         conn.commit()
 
 
@@ -98,30 +123,48 @@ class ExportReport:
 
 
 def _sqlite_time(value: datetime | None) -> str | None:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if value else None
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S") if value else None
 
 
 def _row_values(task: dict[str, Any], ids: dict[str, int]) -> dict[str, Any]:
-    parent = lambda key: ids.get(str(task[key])) if task[key] else None  # noqa: E731
+    parent = lambda key: ids.get(str(task[key])) if task[key] else None
     return {
-        "title": task["title"], "description": task["description"], "status": task["status"],
-        "priority": task["priority"], "project": task["project"], "tags": json.dumps(task["tags"]),
-        "category": task["category"], "due_date": task["due_date"].isoformat() if task["due_date"] else None,
-        "completed_at": _sqlite_time(task["completed_at"]), "external_id": task["external_id"],
-        "external_source": task["external_source"], "external_url": task["external_url"], "notes": task["notes"],
-        "created_at": _sqlite_time(task["created_at"]), "updated_at": _sqlite_time(task["updated_at"]),
-        "reminder_at": _sqlite_time(task["reminder_at"]), "reminder_sent": int(task["reminder_sent"]),
-        "reminder_channels": task["reminder_channels"], "estimated_minutes": task["estimated_minutes"],
-        "actual_minutes": task["actual_minutes"], "started_at": _sqlite_time(task["started_at"]),
-        "recurrence_rule": task["recurrence_rule"], "is_recurring_instance": int(task["is_recurring_instance"]),
-        "recurrence_occurrence": task["recurrence_occurrence"], "parent_recurring_id": parent("parent_recurring_id"),
-        "archived_at": _sqlite_time(task["archived_at"]), "archive_reason": task["archive_reason"],
-        "parent_task_id": parent("parent_task_id"), "calendar_event_id": task["calendar_event_id"],
+        "title": task["title"],
+        "description": task["description"],
+        "status": task["status"],
+        "priority": task["priority"],
+        "project": task["project"],
+        "tags": json.dumps(task["tags"]),
+        "category": task["category"],
+        "due_date": task["due_date"].isoformat() if task["due_date"] else None,
+        "completed_at": _sqlite_time(task["completed_at"]),
+        "external_id": task["external_id"],
+        "external_source": task["external_source"],
+        "external_url": task["external_url"],
+        "notes": task["notes"],
+        "created_at": _sqlite_time(task["created_at"]),
+        "updated_at": _sqlite_time(task["updated_at"]),
+        "reminder_at": _sqlite_time(task["reminder_at"]),
+        "reminder_sent": int(task["reminder_sent"]),
+        "reminder_channels": task["reminder_channels"],
+        "estimated_minutes": task["estimated_minutes"],
+        "actual_minutes": task["actual_minutes"],
+        "started_at": _sqlite_time(task["started_at"]),
+        "recurrence_rule": task["recurrence_rule"],
+        "is_recurring_instance": int(task["is_recurring_instance"]),
+        "recurrence_occurrence": task["recurrence_occurrence"],
+        "parent_recurring_id": parent("parent_recurring_id"),
+        "archived_at": _sqlite_time(task["archived_at"]),
+        "archive_reason": task["archive_reason"],
+        "parent_task_id": parent("parent_task_id"),
+        "calendar_event_id": task["calendar_event_id"],
         "progress_percent": task["progress_percent"],
     }
 
 
-def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbname: str = "empire") -> ExportReport:
+def export_to_sqlite(
+    cluster: Cluster, workspace_id: str, sqlite_path: Path, dbname: str = "empire"
+) -> ExportReport:
     """Make SQLite match PostgreSQL for one workspace's tasks, in one SQLite transaction.
 
     Run with the Tasks API write switch off and the SQLite freeze triggers
@@ -132,14 +175,22 @@ def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbn
     with cluster.connect("empire_migrator", dbname) as pg:
         pg.row_factory = dict_row
         pg.execute("SELECT set_config('app.workspace_id', %s, true)", (workspace_id,))
-        tasks = pg.execute("SELECT * FROM tasks.tasks ORDER BY created_at, id").fetchall()
-        links = pg.execute("SELECT * FROM tasks.task_links ORDER BY created_at, id").fetchall()
+        tasks = pg.execute(
+            "SELECT * FROM tasks.tasks ORDER BY created_at, id"
+        ).fetchall()
+        links = pg.execute(
+            "SELECT * FROM tasks.task_links ORDER BY created_at, id"
+        ).fetchall()
 
     src = sqlite3.connect(sqlite_path, isolation_level=None)
     src.execute("BEGIN IMMEDIATE")
     try:
-        frozen = [row[0] for row in src.execute(
-            "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'empire_freeze_%'")]
+        frozen = [
+            row[0]
+            for row in src.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'empire_freeze_%'"
+            )
+        ]
         src.execute("DROP TRIGGER IF EXISTS empire_freeze_tasks_insert")
         for statement in ("update", "delete"):
             src.execute(f"DROP TRIGGER IF EXISTS empire_freeze_tasks_{statement}")
@@ -152,13 +203,19 @@ def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbn
         present = {row[0] for row in src.execute("SELECT id FROM tasks")}
         for task in tasks:
             if task["legacy_id"] not in present:
-                src.execute("INSERT INTO tasks (id, title) VALUES (?, ?)", (task["legacy_id"], task["title"]))
+                src.execute(
+                    "INSERT INTO tasks (id, title) VALUES (?, ?)",
+                    (task["legacy_id"], task["title"]),
+                )
                 report.new_legacy_ids[str(task["id"])] = task["legacy_id"]
                 report.inserted += 1
         for task in tasks:
             values = _row_values(task, ids)
-            src.execute(f"UPDATE tasks SET {', '.join(f'{c} = ?' for c in values)} WHERE id = ?",
-                        [*values.values(), ids[str(task["id"])]])
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- local SQLite cutover: table/column names come from fixed mappings (_row_values keys, LINK_TABLES); values are bound as ? parameters
+            src.execute(
+                f"UPDATE tasks SET {', '.join(f'{c} = ?' for c in values)} WHERE id = ?",
+                [*values.values(), ids[str(task["id"])]],
+            )
             if task["legacy_id"] in present:
                 report.updated += 1
         keep = set(ids.values())
@@ -172,15 +229,24 @@ def export_to_sqlite(cluster: Cluster, workspace_id: str, sqlite_path: Path, dbn
             target = LINK_TABLES.get(link["target_type"])
             ref = link["target_ref"].rsplit(":", 1)[-1]
             if target is None or not ref.startswith("legacy-"):
-                report.links_unmapped.append(f"{link['id']}: {link['relation']} -> {link['target_ref']}")
+                report.links_unmapped.append(
+                    f"{link['id']}: {link['relation']} -> {link['target_ref']}"
+                )
                 continue
             table, column = target
             extra = {"source": "empire-platform"}
             if table == "task_skill_links":
                 extra["match_reason"] = "linked in empire-platform"
             columns = ["task_id", column, *extra]
-            src.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
-                        [ids[str(link["task_id"])], int(ref.removeprefix("legacy-")), *extra.values()])
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query -- local SQLite cutover: table/column names come from fixed mappings (_row_values keys, LINK_TABLES); values are bound as ? parameters
+            src.execute(
+                f"INSERT OR IGNORE INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))})",
+                [
+                    ids[str(link["task_id"])],
+                    int(ref.removeprefix("legacy-")),
+                    *extra.values(),
+                ],
+            )
             report.links_inserted += 1
         for statement in frozen:
             src.execute(statement)

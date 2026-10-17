@@ -2,9 +2,8 @@ import asyncio
 
 import httpx
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
-
 from empire_mcp.server import build_server
+from mcp.server.mcpserver.exceptions import ToolError
 
 SECRET = "postgres://user:hunter2@db.internal/secret-row-42"
 
@@ -15,12 +14,15 @@ def server_with(status: int, body: object) -> object:
     return build_server(client, None, lambda: "test-token")
 
 
-@pytest.mark.parametrize("body", [
-    {"detail": {"reason": SECRET}},
-    {"detail": {"error": {"nested": SECRET}}},
-    {"detail": SECRET},
-    {"message": SECRET},
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"detail": {"reason": SECRET}},
+        {"detail": {"error": {"nested": SECRET}}},
+        {"detail": SECRET},
+        {"message": SECRET},
+    ],
+)
 def test_tool_errors_never_carry_upstream_text(body):
     with pytest.raises(ToolError) as failure:
         asyncio.run(server_with(403, body).call_tool("tasks.list", {}))
@@ -31,5 +33,7 @@ def test_tool_errors_never_carry_upstream_text(body):
 
 def test_server_errors_map_to_fixed_words():
     with pytest.raises(ToolError) as failure:
-        asyncio.run(server_with(503, {"detail": {"reason": SECRET}}).call_tool("tasks.list", {}))
+        asyncio.run(
+            server_with(503, {"detail": {"reason": SECRET}}).call_tool("tasks.list", {})
+        )
     assert "503: upstream_error" in str(failure.value)

@@ -45,8 +45,12 @@ class Principal:
     on_behalf_of: uuid.UUID
     delegation: uuid.UUID | None
     channel: str
-    scopes: frozenset[str] | None = None  # set only on exchanged tokens; narrows, never widens
-    external_actor: str | None = None  # MCP-issued tokens only: the OAuth subject behind the call
+    scopes: frozenset[str] | None = (
+        None  # set only on exchanged tokens; narrows, never widens
+    )
+    external_actor: str | None = (
+        None  # MCP-issued tokens only: the OAuth subject behind the call
+    )
 
 
 @dataclass(frozen=True)
@@ -55,14 +59,18 @@ class TokenVerifier:
     issuer: str
     audience: str = AUDIENCE
     max_lifetime: int = MAX_LIFETIME_SECONDS  # delegated tokens only (hosted: up to 30 days); every call re-checks the delegation
-    mcp_issuer: str | None = None  # second issuer, trusted only for MCP_SCOPES; off unless a key is given too
+    mcp_issuer: str | None = (
+        None  # second issuer, trusted only for MCP_SCOPES; off unless a key is given too
+    )
     mcp_public_key_pem: str | None = None
     # Optional second gate: (identity, workspace) pairs MCP tokens may name; None = any mapped by empire-mcp.
     mcp_subjects: frozenset[tuple[uuid.UUID, uuid.UUID]] | None = None
 
     def __post_init__(self) -> None:
         if not 0 < self.max_lifetime <= HARD_MAX_LIFETIME_SECONDS:
-            raise ValueError(f"max_lifetime must be between 1 and {HARD_MAX_LIFETIME_SECONDS} seconds")
+            raise ValueError(
+                f"max_lifetime must be between 1 and {HARD_MAX_LIFETIME_SECONDS} seconds"
+            )
         if (self.mcp_issuer is None) != (self.mcp_public_key_pem is None):
             raise ValueError("mcp_issuer and mcp_public_key_pem must be given together")
         if self.mcp_issuer is not None and self.mcp_issuer == self.issuer:
@@ -72,7 +80,10 @@ class TokenVerifier:
         if not authorization or not authorization.startswith("Bearer "):
             raise Unauthenticated("missing bearer token")
         token = authorization.removeprefix("Bearer ")
-        if self.mcp_issuer is not None and self._unverified_issuer(token) == self.mcp_issuer:
+        if (
+            self.mcp_issuer is not None
+            and self._unverified_issuer(token) == self.mcp_issuer
+        ):
             return self._verify_mcp(token, channel)
         try:
             claims = jwt.decode(
@@ -85,14 +96,20 @@ class TokenVerifier:
             )
             lifetime = claims["exp"] - claims["iat"]
             # A token without a delegation (owner token) has no revocation record: always short-lived.
-            limit = self.max_lifetime if claims.get("del") else min(self.max_lifetime, MAX_LIFETIME_SECONDS)
+            limit = (
+                self.max_lifetime
+                if claims.get("del")
+                else min(self.max_lifetime, MAX_LIFETIME_SECONDS)
+            )
             if lifetime > limit:
                 raise Unauthenticated("token lifetime too long")
             actor = uuid.UUID(claims["sub"])
             workspace = uuid.UUID(claims["ws"])
             delegation = uuid.UUID(claims["del"]) if claims.get("del") else None
             on_behalf_of = uuid.UUID(claims["obo"]) if claims.get("obo") else None
-            initiated_by = uuid.UUID(claims["act"]["sub"]) if claims.get("act") else actor
+            initiated_by = (
+                uuid.UUID(claims["act"]["sub"]) if claims.get("act") else actor
+            )
         except (jwt.PyJWTError, KeyError, ValueError, TypeError) as exc:
             raise Unauthenticated("invalid token") from exc
         if (delegation is None) != (on_behalf_of is None):
@@ -100,7 +117,9 @@ class TokenVerifier:
         channel = channel or "api"
         if channel not in CHANNELS:
             raise Unauthenticated("unknown channel")
-        scopes = frozenset(str(claims["scope"]).split()) if claims.get("scope") else None
+        scopes = (
+            frozenset(str(claims["scope"]).split()) if claims.get("scope") else None
+        )
         return Principal(
             scopes=scopes,
             actor=actor,
@@ -142,7 +161,10 @@ class TokenVerifier:
                 raise Unauthenticated("MCP token has no external actor")
             actor = uuid.UUID(claims["sub"])
             workspace = uuid.UUID(claims["ws"])
-            if self.mcp_subjects is not None and (actor, workspace) not in self.mcp_subjects:
+            if (
+                self.mcp_subjects is not None
+                and (actor, workspace) not in self.mcp_subjects
+            ):
                 raise Unauthenticated("MCP subject not allowed")
         except Unauthenticated:
             raise
@@ -150,5 +172,13 @@ class TokenVerifier:
             raise Unauthenticated("invalid token") from exc
         if (channel or "mcp") != "mcp":
             raise Unauthenticated("MCP tokens are used on the mcp channel only")
-        return Principal(actor=actor, workspace=workspace, initiated_by=actor, on_behalf_of=actor, delegation=None,
-                         channel="mcp", scopes=scopes, external_actor=external)
+        return Principal(
+            actor=actor,
+            workspace=workspace,
+            initiated_by=actor,
+            on_behalf_of=actor,
+            delegation=None,
+            channel="mcp",
+            scopes=scopes,
+            external_actor=external,
+        )

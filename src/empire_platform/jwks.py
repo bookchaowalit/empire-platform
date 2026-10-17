@@ -27,10 +27,14 @@ def rsa_jwk(public_key_pem: str) -> dict[str, Any]:
     """RS256 verification JWK with its RFC 7638 thumbprint as ``kid``."""
     key = load_pem_public_key(public_key_pem.encode())
     if not isinstance(key, rsa.RSAPublicKey):
-        raise ValueError("the platform verification key must be an RSA public key")
+        raise ValueError(  # noqa: TRY004 - callers handle ValueError; keep the exception type
+            "the platform verification key must be an RSA public key"
+        )
     numbers = key.public_numbers()
     required = {"e": _b64(numbers.e), "kty": "RSA", "n": _b64(numbers.n)}
-    thumbprint = hashlib.sha256(json.dumps(required, separators=(",", ":"), sort_keys=True).encode()).digest()
+    thumbprint = hashlib.sha256(
+        json.dumps(required, separators=(",", ":"), sort_keys=True).encode()
+    ).digest()
     kid = base64.urlsafe_b64encode(thumbprint).rstrip(b"=").decode()
     return {**required, "alg": "RS256", "use": "sig", "kid": kid}
 
