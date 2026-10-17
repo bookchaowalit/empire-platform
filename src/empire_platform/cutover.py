@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import json
 import re
-import os
 import sqlite3
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +54,10 @@ class ToolFailed(RuntimeError):
 def _run_tool(args: list[str], conninfo: str) -> None:
     """Run pg_dump/pg_restore; the connection string never appears in an error or traceback."""
     result = subprocess.run(
-        [*args, "--dbname", conninfo], capture_output=True, text=True
+        [*args, "--dbname", conninfo],
+        capture_output=True,
+        text=True,
+        check=False,  # returncode is checked below without echoing the connection string
     )
     if result.returncode != 0:
         detail = re.sub(r"postgres(ql)?://\S+", "<connection>", result.stderr or "")[
@@ -121,13 +123,11 @@ class ExportReport:
 
 
 def _sqlite_time(value: datetime | None) -> str | None:
-    return (
-        value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if value else None
-    )
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S") if value else None
 
 
 def _row_values(task: dict[str, Any], ids: dict[str, int]) -> dict[str, Any]:
-    parent = lambda key: ids.get(str(task[key])) if task[key] else None  # noqa: E731
+    parent = lambda key: ids.get(str(task[key])) if task[key] else None
     return {
         "title": task["title"],
         "description": task["description"],

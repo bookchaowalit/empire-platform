@@ -6,7 +6,6 @@ from datetime import timedelta
 
 import psycopg
 import pytest
-
 from conftest import (
     add_member,
     create_workspace,
@@ -141,9 +140,8 @@ def insert_execution(api, workspace, executed_by, on_behalf_of, delegation=None)
 
 def test_agent_cannot_act_for_someone_without_their_delegation(api, workspace):
     coach = workspace.members["coach"]
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with api.transaction():
-            insert_execution(api, workspace, coach, workspace.owner)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), api.transaction():
+        insert_execution(api, workspace, coach, workspace.owner)
     delegation = delegate(api, workspace, workspace.owner, coach, [READ])
     insert_execution(api, workspace, coach, workspace.owner, delegation)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):

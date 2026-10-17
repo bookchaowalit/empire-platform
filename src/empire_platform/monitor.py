@@ -32,7 +32,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -293,7 +293,7 @@ def evaluate(
                 )
             )
             continue
-        left = datetime.fromtimestamp(exp, timezone.utc) - now
+        left = datetime.fromtimestamp(exp, UTC) - now
         if left <= timedelta(0):
             findings.append(
                 Finding(
@@ -333,7 +333,7 @@ def run(
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     current = snapshot(cluster)
     current["tokens"] = token_expiries(tokens_dir)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     findings, down_since = evaluate(
         current, state.get("snapshot"), probe(api), state.get("api_down_since"), now
     )

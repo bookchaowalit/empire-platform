@@ -11,17 +11,17 @@ import uuid
 
 import psycopg
 import pytest
+from conftest import use_workspace
 from fastapi.testclient import TestClient
+from graph_service.consumer import GraphConsumer
+from graph_world import ISSUER, apps, bearer, gkeys, gtoken, gworld, run_publisher  # noqa: F401
 from psycopg import sql
 from psycopg.rows import dict_row
-
-from conftest import use_workspace
-from empire_platform.devdb import Cluster, pg_bin_dir
-from graph_service.consumer import GraphConsumer
-from graph_world import apps, bearer, gkeys, gtoken, gworld, run_publisher, ISSUER  # noqa: F401
 from tasks_api.app import create_app
 from tasks_api.auth import TokenVerifier
 from tasks_api.publisher import publish
+
+from empire_platform.devdb import Cluster, pg_bin_dir
 
 
 def restore_copy(cluster, archive, dbname):
@@ -54,6 +54,7 @@ def restore_copy(cluster, archive, dbname):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=30,
+            check=False,  # returncode is checked below
         )
         if result.returncode:
             category = next(

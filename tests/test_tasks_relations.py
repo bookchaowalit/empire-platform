@@ -10,13 +10,13 @@ import uuid
 from datetime import date, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-
 from conftest import add_member, create_workspace, delegate
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import TASKS_OWNER
+from fastapi.testclient import TestClient
 from tasks_api.app import create_app
 from tasks_api.auth import TokenVerifier
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
 
 ISSUER = "empire-relations-test"
 GOAL = "empire:goals:goal:legacy-7"
@@ -110,7 +110,7 @@ def test_filters_match_the_legacy_queries(setup):
     today = date.today()
     get = lambda **params: numbers(
         client.get("/v1/tasks", params=params, headers=owner)
-    )  # noqa: E731
+    )
     assert get(project="alpha") == [a, b]
     assert get(priority_max=2) == [a, c]
     assert get(due_from=str(today), due_before=str(today + timedelta(days=7))) == [b]
@@ -130,7 +130,7 @@ def test_filters_match_the_legacy_queries(setup):
 
 
 def test_stats_count_and_group(setup):
-    client, _, owner, made, _ = setup
+    client, _, owner, _made, _ = setup
     stats = client.get(
         "/v1/tasks/stats",
         params={"group_by": "project", "project": "alpha"},
@@ -185,7 +185,7 @@ def test_links_list_by_task_and_target_and_keep_attributes(setup):
 
 
 def test_assignments_are_idempotent_and_need_their_permission(setup):
-    client, headers, owner, made, ids = setup
+    client, headers, _owner, made, ids = setup
     task = made["b"]
     body = {
         "assignee_type": "role",
@@ -234,7 +234,7 @@ def test_role_suggestions_upsert_review_and_compare_and_set(setup):
     }
     put = lambda body: client.put(
         f"/v1/tasks/{task['id']}/role-suggestions", json=body, headers=router
-    ).json()  # noqa: E731
+    ).json()
     assert put(suggestion)["outcome"] == "created"
     assert put(suggestion)["outcome"] == "unchanged"
     review = {
@@ -245,7 +245,7 @@ def test_role_suggestions_upsert_review_and_compare_and_set(setup):
     }
     patch = lambda body: client.patch(
         f"/v1/tasks/{task['id']}/role-suggestions", json=body, headers=router
-    ).json()  # noqa: E731
+    ).json()
     assert patch(review)["outcome"] == "updated"
     assert patch(review)["outcome"] == "unchanged"  # no longer 'suggested'
     # A later resync with new evidence keeps the accepted decision.
@@ -261,7 +261,7 @@ def test_role_suggestions_upsert_review_and_compare_and_set(setup):
 
 
 def test_task_types_and_other_workspaces_see_nothing(setup, cluster):
-    client, headers, owner, made, ids = setup
+    client, headers, owner, _made, ids = setup
     assert client.get("/v1/task-types", headers=owner).status_code == 200
     outsider = headers(sub=ids["other"].owner, workspace=ids["other"].id)
     for path, params in [
@@ -338,7 +338,7 @@ def test_withdrawals_remove_only_what_is_asked(setup):
             "review_status": "accepted",
         },
     )
-    withdraw = lambda role: client.delete(  # noqa: E731
+    withdraw = lambda role: client.delete(
         f"/v1/tasks/{task['id']}/role-suggestions",
         headers=router,
         params={
@@ -416,7 +416,7 @@ def test_external_identity_is_set_once(setup):
     other = client.post("/v1/tasks", json={"title": "Another"}, headers=owner).json()
     ref = f"td-{uuid.uuid4().hex[:8]}"
     put = lambda task, ext: client.put(
-        f"/v1/tasks/{task['id']}/external-identity",  # noqa: E731
+        f"/v1/tasks/{task['id']}/external-identity",
         json={"source": "todoist", "external_id": ext},
         headers=owner,
     )
@@ -472,7 +472,7 @@ def test_dependencies_are_idempotent_and_validated(setup):
     a, b = made["a"], made["b"]
     put = lambda task, body: client.put(
         f"/v1/tasks/{task['id']}/dependencies", json=body, headers=owner
-    )  # noqa: E731
+    )
     assert put(b, {"depends_on": a["number"]}).json()["outcome"] == "created"
     assert put(b, {"depends_on": a["number"]}).json()["outcome"] == "unchanged"
     assert put(b, {"depends_on": b["number"]}).status_code == 422  # no self dependency

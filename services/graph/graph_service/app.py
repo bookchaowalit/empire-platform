@@ -7,7 +7,6 @@ as an unknown URN.
 """
 
 # No `from __future__ import annotations`: FastAPI resolves annotations at runtime.
-import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -17,7 +16,6 @@ import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
-
 from tasks_api.auth import Principal, TokenVerifier, Unauthenticated
 
 URN = r"^empire:[a-z0-9-]+:[a-z0-9-]+:[A-Za-z0-9:._-]+$"

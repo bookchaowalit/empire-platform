@@ -9,7 +9,6 @@ import uuid
 
 import psycopg
 import pytest
-
 from graph_service.consumer import GraphConsumer
 from graph_world import (  # noqa: F401  (fixtures)
     apps,
@@ -95,7 +94,7 @@ def test_restricted_edge_needs_consent_even_with_permission(
     assert granted.status_code == 201
     after = {urn: rel for urn, rel, _ in neighbors(graph, owner, gworld.goal)}
     assert after[gworld.diary] == "tracks-goal"
-    label = [
+    label = [  # noqa: RUF015 - a missing node should fail as IndexError
         item
         for item in graph.get(
             "/v1/graph/neighbors", params={"urn": gworld.goal}, headers=bearer(owner)

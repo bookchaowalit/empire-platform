@@ -5,17 +5,17 @@ from __future__ import annotations
 import base64
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
-
 from conftest import create_workspace, use_workspace
+from graph_world import apps, bearer, gkeys, gtoken, gworld, run_publisher  # noqa: F401  (fixtures)
+
 from empire_platform import cells
 from empire_platform.devtoken import key_pair, mint
 from empire_platform.monitor import evaluate, run, snapshot, token_expiries
 from empire_platform.permissions import DECISIONS_OWNER
-from graph_world import apps, bearer, gkeys, gtoken, gworld, run_publisher  # noqa: F401  (fixtures)
 
 
 def superuser(cluster, query, params=()):
@@ -71,7 +71,7 @@ def checks(findings):
 
 
 def test_lost_tasks_breach_but_recorded_deletions_do_not():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     before = base(w={"tasks": 10, "distinct_numbers": 10, "deleted_events": 0})
     lost = base(w={"tasks": 8, "distinct_numbers": 8, "deleted_events": 1})
     deleted = base(w={"tasks": 9, "distinct_numbers": 9, "deleted_events": 1})
@@ -85,7 +85,7 @@ def test_lost_tasks_breach_but_recorded_deletions_do_not():
 
 
 def test_outbox_api_and_switch_signals():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     snap = base()
     snap["outbox"].update(oldest_age_seconds=20 * 60, max_attempts=4, graph_lagging=2)
     snap["writes_enabled"] = False
@@ -133,7 +133,7 @@ def test_run_keeps_state_between_days(cluster, tmp_path, apps, gworld, gtoken):
 
 
 def test_cell_execution_signals():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     snap = base()
     snap["cell_executions"] = {"decisions": {"running_warn": 2, "running_breach": 0}}
     assert checks(evaluate(snap, None, None, None, now)[0]) == {
@@ -221,7 +221,7 @@ def test_token_expiry_reads_only_exp_and_skips_short_lived(tmp_path):
     assert token_expiries(tmp_path / "missing") == {}
     assert token_expiries(None) == {}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     snap = base()
     snap["tokens"] = expiries
     found = evaluate(snap, None, None, None, now)[0]

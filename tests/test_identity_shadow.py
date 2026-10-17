@@ -17,15 +17,15 @@ import httpx
 import jwt
 import psycopg
 import pytest
+from conftest import add_member, create_workspace, delegate
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from conftest import add_member, create_workspace, delegate
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import DECISIONS_OWNER
 from platform_api.identity_shadow import IdentityShadow, shadow_url
 from platform_api.routes import register
 from tasks_api.auth import TokenVerifier
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import DECISIONS_OWNER
 
 ISSUER = "empire-platform-test"
 GOOGLE_CLIENT = "client.apps.googleusercontent.com"

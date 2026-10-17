@@ -1,3 +1,14 @@
+[lint]
+# FastAPI dependency injection idiom (`caller = Depends(principal)`), not a call evaluated per use.
+flake8-bugbear.extend-immutable-calls = ["fastapi.Depends"]
+
+[lint.per-file-ignores]
+# pytest fixtures are imported from shared modules (graph_world, conftest) and then requested
+# by name as test parameters, which Ruff reports as F811 redefinitions. Nested
+# `pytest.raises(...)` / `conn.transaction()` blocks are kept where the formatter cannot merge
+# them cleanly (SIM117).
+"tests/**" = ["F811", "SIM117"]
+
 [format]
 # Left unformatted on purpose: reformatting would rewrite the lines that hold synthetic test
 # credentials (each marked `# pragma: allowlist secret`), and secret scanners on the PR then

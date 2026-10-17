@@ -11,7 +11,6 @@ from pathlib import Path
 
 import psycopg
 import pytest
-
 from conftest import add_member, create_workspace, delegate, new_id, use_workspace
 from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 
@@ -157,9 +156,8 @@ def test_decision_records_are_append_only(api):
     names = build_world(api)
     use_workspace(api, names["alpha"])
     authorize(api, request_from(SPEC["cases"][0], names))
-    with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with api.transaction():
-            api.execute("DELETE FROM platform.authorization_decisions")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), api.transaction():
+        api.execute("DELETE FROM platform.authorization_decisions")
 
 
 def test_enforce_raises_unless_allowed(api):

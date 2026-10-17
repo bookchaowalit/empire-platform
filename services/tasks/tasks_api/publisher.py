@@ -53,9 +53,7 @@ def publish(
             event = json.loads(json.dumps(row, default=str))
             try:
                 deliver(event)
-            except (
-                Exception
-            ) as exc:  # any consumer failure: retry later, never lose the event
+            except Exception as exc:  # noqa: BLE001 - any consumer failure: retry later, never lose the event
                 report.failed += 1
                 report.errors.append(f"{row['id']}: {type(exc).__name__}")
                 conn.execute(
@@ -95,9 +93,7 @@ def run_loop(
         iterations += 1
         try:
             report = step()
-        except (
-            Exception
-        ) as exc:  # transient database or network error: back off, never crash-loop
+        except Exception as exc:  # noqa: BLE001 - transient database or network error: back off, never crash-loop
             errors += 1
             delay = min(max_backoff, max(interval, 1.0) * 2 ** min(errors, 10))
             log(
@@ -119,8 +115,9 @@ def run_loop(
 
 
 def main(argv: list[str] | None = None) -> int:
-    from empire_platform.devdb import default_cluster
     from graph_service.consumer import GraphConsumer
+
+    from empire_platform.devdb import default_cluster
 
     parser = argparse.ArgumentParser(
         prog="empire-publish", description=__doc__.splitlines()[0]
@@ -167,7 +164,7 @@ def serve_health(port: int, stop: threading.Event) -> None:
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     class Health(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             healthy = self.path == "/health" and not stop.is_set()
             self.send_response(200 if healthy else 503)
             self.end_headers()

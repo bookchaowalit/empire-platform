@@ -7,14 +7,14 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
+from conftest import add_member, create_workspace, delegate
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from conftest import add_member, create_workspace, delegate, use_workspace
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import DECISIONS_OWNER
 from platform_api.routes import register
 from tasks_api.auth import TokenVerifier
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import DECISIONS_OWNER
 
 ISSUER = "empire-platform-test"
 

@@ -30,13 +30,13 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import psycopg
+from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response
-from fastapi import Request as HttpRequest
 from fastapi import Path as Path_
+from fastapi import Request as HttpRequest
 from psycopg.rows import dict_row
 from pydantic import BaseModel, ConfigDict, Field
 
-from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 from empire_platform.token_exchange import MCP_ISSUER
 from tasks_api.auth import (
     HARD_MAX_LIFETIME_SECONDS,
@@ -1066,7 +1066,6 @@ def create_app(
     ) -> Response:
         def apply(conn, before, execution):
             conn.execute("DELETE FROM tasks.tasks WHERE id = %s", (task_id,))
-            return None
 
         change(
             caller,
@@ -1960,12 +1959,11 @@ def main() -> None:
 
     jwks.register(app, config.public_key_pem)
     # Decentralized cells (own database) reach the platform and graph over HTTP through this process.
-    from platform_api.routes import register
-
     # Runs as tasks_api: it holds only the platform and graph entry points (authorize, cell executions,
     # audit, graph.ingest_cell_event), never platform or graph table grants.
     # platform-identity step 3: mirror answered decisions to the identity service when IDENTITY_SHADOW_URL is set.
     from platform_api.identity_shadow import IdentityShadow, enable_logging, shadow_url
+    from platform_api.routes import register
 
     mirror_url = shadow_url(os.environ.get("IDENTITY_SHADOW_URL"))
     if mirror_url:

@@ -11,8 +11,6 @@ import uuid
 import httpx
 import jwt
 import pytest
-from fastapi.testclient import TestClient
-
 from empire_mcp.hosted import (
     CACHE_MAX_SECONDS,
     ClerkTokenVerifier,
@@ -24,12 +22,14 @@ from empire_mcp.hosted import (
     parse_subjects,
 )
 from empire_mcp.server import ToolFailed
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.token_exchange import MCP_SCOPES, McpTokenMinter
+from fastapi.testclient import TestClient
 from graph_world import ISSUER, apps, bearer, gkeys, gtoken, gworld  # noqa: F401  (fixtures)
 from tasks_api.app import create_app as create_tasks_app
 from tasks_api.app import server_config
 from tasks_api.auth import TokenVerifier, Unauthenticated
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.token_exchange import MCP_SCOPES, McpTokenMinter
 
 PUBLIC = "https://mcp.example.test"
 CLERK = "https://clerk.example.test"
@@ -268,8 +268,8 @@ def test_empty_or_missing_map_allows_nobody(mcp_keys, trusting_tasks, clerk):
         "[]",
         "not json",
         '{"user_a": {"identity": "x", "workspace": "y"}}',
-        '{"user_a": {"identity": "%s"}}' % uuid.uuid4(),
-        '{"user_a": {"identity": "%s", "workspace": "%s", "admin": true}}'
+        '{"user_a": {"identity": "%s"}}' % uuid.uuid4(),  # noqa: UP031 - JSON braces read clearer with %
+        '{"user_a": {"identity": "%s", "workspace": "%s", "admin": true}}'  # noqa: UP031 - JSON braces read clearer with %
         % (uuid.uuid4(), uuid.uuid4()),
     ],
 )

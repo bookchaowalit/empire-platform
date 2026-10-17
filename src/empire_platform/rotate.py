@@ -26,11 +26,11 @@ import base64
 import json
 import os
 import subprocess
-import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEPLOYMENTS = REPO_ROOT / "contracts" / "automations" / "v1" / "deployments.json"

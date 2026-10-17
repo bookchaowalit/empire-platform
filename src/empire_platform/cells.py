@@ -27,7 +27,7 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
-from datetime import timedelta, timezone
+from datetime import UTC, timedelta
 
 from psycopg.rows import dict_row
 
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.execution:
             rows = stuck(cluster, found[0], args.cell)
             for row in rows:
-                started = row["started_at"].astimezone(timezone.utc)
+                started = row["started_at"].astimezone(UTC)
                 print(
                     f"{row['execution_id']}  {started:%Y-%m-%d %H:%M}Z  {row['permission']}"
                     f"  {row['resource_type']}:{row['resource_id']}"

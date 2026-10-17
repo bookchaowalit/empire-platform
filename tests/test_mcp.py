@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
-
 from empire_mcp.server import build_server
 from graph_world import (  # noqa: F401  (fixtures)
     apps,
@@ -19,6 +16,7 @@ from graph_world import (  # noqa: F401  (fixtures)
     neighbors,
     run_publisher,
 )
+from mcp.server.mcpserver.exceptions import ToolError
 
 IDENTITY_ARGUMENTS = [
     "actor",

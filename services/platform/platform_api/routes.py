@@ -30,11 +30,10 @@ from contextlib import contextmanager
 from typing import Annotated, Any, Literal
 
 import psycopg
+from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
-
-from empire_authz import AuthorizationDenied, Request, Resource, authorize, enforce
 from tasks_api.auth import Principal, TokenVerifier, Unauthenticated
 
 PERMISSION = re.compile(

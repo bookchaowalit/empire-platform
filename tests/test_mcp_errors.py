@@ -2,9 +2,8 @@ import asyncio
 
 import httpx
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
-
 from empire_mcp.server import build_server
+from mcp.server.mcpserver.exceptions import ToolError
 
 SECRET = "postgres://user:hunter2@db.internal/secret-row-42"
 

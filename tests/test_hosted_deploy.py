@@ -9,12 +9,12 @@ import uuid
 
 import jwt
 import pytest
-
-from empire_platform import automations
-from empire_platform.devtoken import generate_keys, key_pair, mint
 from tasks_api.app import server_config
 from tasks_api.auth import TokenVerifier, Unauthenticated
 from tasks_api.publisher import PublishReport, run_loop
+
+from empire_platform import automations
+from empire_platform.devtoken import generate_keys, key_pair, mint
 
 PEM = "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----"
 
@@ -137,6 +137,7 @@ def test_cli_keys_prints_only_public_path(tmp_path, capsys):
 
 def test_production_tokens(cluster, monkeypatch, tmp_path):
     from conftest import create_workspace
+
     from empire_platform.permissions import TASKS_OWNER
 
     with cluster.connect("platform_api") as conn:

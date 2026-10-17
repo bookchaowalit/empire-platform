@@ -55,7 +55,7 @@ PATTERNS = (
     (r"every\s+(\d+)\s*d", 1),
     (r"every\s+(\d+)\s*w", 7),
 )
-INSTANCE_TITLE = re.compile(r"^\[R(\d+)\] (.*)$", re.S)
+INSTANCE_TITLE = re.compile(r"^\[R(\d+)\] (.*)$", re.DOTALL)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

@@ -26,7 +26,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,13 +47,13 @@ LIMITATIONS = """\
 
 
 def run(*args: str, **kwargs) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return subprocess.run(  # noqa: PLW1510 - callers read returncode; check may come in via kwargs
         list(args), cwd=ROOT, capture_output=True, text=True, **kwargs
     )
 
 
 def main() -> int:
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = ROOT / ".runtime" / "evidence" / stamp
     out.mkdir(parents=True)
 

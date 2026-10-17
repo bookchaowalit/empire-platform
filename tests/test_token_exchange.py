@@ -7,11 +7,11 @@ import json
 
 import jwt
 import pytest
-
 from empire_mcp.server import build_server
+from graph_world import ISSUER, apps, bearer, gkeys, gtoken, gworld  # noqa: F401  (fixtures)
+
 from empire_platform.devtoken import mint
 from empire_platform.token_exchange import ExchangeRefused, TokenExchanger
-from graph_world import ISSUER, apps, bearer, gkeys, gtoken, gworld  # noqa: F401  (fixtures)
 
 
 @pytest.fixture

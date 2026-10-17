@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
@@ -130,7 +130,7 @@ def delegate(
             grantor,
             grantee,
             scopes,
-            datetime.now(timezone.utc) + expires_in,
+            datetime.now(UTC) + expires_in,
         ),
     )
     return delegation_id

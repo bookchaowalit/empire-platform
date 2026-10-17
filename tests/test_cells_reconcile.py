@@ -6,8 +6,8 @@ import uuid
 
 import psycopg
 import pytest
-
 from conftest import create_workspace, use_workspace
+
 from empire_platform import cells
 from empire_platform.permissions import DECISIONS_OWNER
 

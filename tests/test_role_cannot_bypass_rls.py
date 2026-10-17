@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import psycopg
 import pytest
-
 from conftest import create_workspace, new_id, use_workspace
 
 

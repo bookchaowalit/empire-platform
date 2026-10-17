@@ -14,7 +14,6 @@ from pathlib import Path
 
 import psycopg
 import pytest
-
 from graph_service.consumer import GraphConsumer
 from graph_world import apps, bearer, due_now, gkeys, gtoken, gworld, run_publisher  # noqa: F401  (fixtures)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from test_tasks_api import client, create, keys, superuser, token, world  # noqa: F401  (fixtures)
 
@@ -22,7 +22,7 @@ def events_for(cluster, urn: str) -> list[str]:
 
 def test_external_upsert_creates_once_then_updates_or_does_nothing(
     client, token, world, cluster
-):  # noqa: F811
+):
     owner = token(world.owner, world.alpha)
     key = f"/v1/tasks/external/task-sync/LT-{uuid.uuid4().hex[:6]}"
     first = client.put(key, json={"title": "Ticket", "priority": 2}, headers=owner)
@@ -40,7 +40,7 @@ def test_external_upsert_creates_once_then_updates_or_does_nothing(
     ]
 
 
-def test_concurrent_external_upserts_create_one_task(client, token, world, cluster):  # noqa: F811
+def test_concurrent_external_upserts_create_one_task(client, token, world, cluster):
     owner = token(world.owner, world.alpha)
     external_id = f"race-{uuid.uuid4().hex[:6]}"
     results: list[int] = []
@@ -70,7 +70,7 @@ def test_concurrent_external_upserts_create_one_task(client, token, world, clust
     assert count == 1
 
 
-def test_same_external_key_in_another_workspace_is_separate(client, token, world):  # noqa: F811
+def test_same_external_key_in_another_workspace_is_separate(client, token, world):
     path = f"/v1/tasks/external/engagements/E-{uuid.uuid4().hex[:6]}"
     alpha = client.put(
         path, json={"title": "Alpha"}, headers=token(world.owner, world.alpha)
@@ -82,11 +82,9 @@ def test_same_external_key_in_another_workspace_is_separate(client, token, world
     assert alpha["task"]["id"] != beta["task"]["id"]
 
 
-def test_reminder_delivery_is_recorded_once(client, token, world, cluster):  # noqa: F811
+def test_reminder_delivery_is_recorded_once(client, token, world, cluster):
     owner = token(world.owner, world.alpha)
-    reminder_at = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(
-        microsecond=0
-    )
+    reminder_at = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
     task = create(
         client,
         owner,
@@ -119,7 +117,7 @@ def test_reminder_delivery_is_recorded_once(client, token, world, cluster):  # n
     assert events_for(cluster, task["urn"]).count("tasks.reminder.delivered") == 1
 
 
-def test_recurring_occurrences_are_generated_once(client, token, world, cluster):  # noqa: F811
+def test_recurring_occurrences_are_generated_once(client, token, world, cluster):
     owner = token(world.owner, world.alpha)
     parent = create(
         client,
@@ -140,7 +138,7 @@ def test_recurring_occurrences_are_generated_once(client, token, world, cluster)
         "2026-10-15",
         "2026-10-22",
     ]
-    assert [t["title"] for t in first["created"]][0] == "[R1] Weekly long run"
+    assert [t["title"] for t in first["created"]][0] == "[R1] Weekly long run"  # noqa: RUF015 - an empty list should fail as IndexError
     assert retry["created"] == [] and retry["existing"] == 3
     later = client.post(
         f"/v1/tasks/{parent['id']}/occurrences/generate",
@@ -158,7 +156,7 @@ def test_recurring_occurrences_are_generated_once(client, token, world, cluster)
     assert instances == 4
 
 
-def test_generate_requires_a_rule(client, token, world):  # noqa: F811
+def test_generate_requires_a_rule(client, token, world):
     owner = token(world.owner, world.alpha)
     task = create(client, owner, title="One-off")
     response = client.post(
@@ -169,7 +167,7 @@ def test_generate_requires_a_rule(client, token, world):  # noqa: F811
     assert response.status_code == 422
 
 
-def test_writer_fields_round_trip_and_archive(client, token, world, cluster):  # noqa: F811
+def test_writer_fields_round_trip_and_archive(client, token, world, cluster):
     owner = token(world.owner, world.alpha)
     parent = create(client, owner, title="Plan race")
     child = create(
@@ -208,7 +206,7 @@ def test_writer_fields_round_trip_and_archive(client, token, world, cluster):  #
     assert events_for(cluster, child["urn"])[-1] == "tasks.task.archived"
 
 
-def test_parent_from_another_workspace_is_rejected(client, token, world):  # noqa: F811
+def test_parent_from_another_workspace_is_rejected(client, token, world):
     beta_task = create(client, token(world.outsider, world.beta), title="Beta parent")
     response = client.post(
         "/v1/tasks",
@@ -221,7 +219,7 @@ def test_parent_from_another_workspace_is_rejected(client, token, world):  # noq
     )
 
 
-def test_generate_rejects_a_zero_interval_instead_of_looping(client, token, world):  # noqa: F811
+def test_generate_rejects_a_zero_interval_instead_of_looping(client, token, world):
     owner = token(world.owner, world.alpha)
     for rule in ("every 0 days", "every 0 weeks", "every 0 months"):
         parent = create(
@@ -241,7 +239,7 @@ def test_generate_rejects_a_zero_interval_instead_of_looping(client, token, worl
 
 def test_generate_is_capped_per_call_and_a_retry_continues(
     client, token, world, cluster
-):  # noqa: F811
+):
     from tasks_api.app import MAX_OCCURRENCES_PER_CALL
 
     owner = token(world.owner, world.alpha)

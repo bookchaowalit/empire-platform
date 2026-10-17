@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from psycopg.rows import dict_row
@@ -103,7 +102,7 @@ def provision(
                 " ORDER BY created_at DESC LIMIT 1",
                 (identity, owner),
             ).fetchone()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if (
                 current
                 and tuple(sorted(current["scopes"])) == scopes

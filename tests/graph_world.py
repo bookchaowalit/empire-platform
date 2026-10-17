@@ -8,16 +8,16 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
-
 from conftest import add_member, create_workspace, delegate, new_id, use_workspace
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import TASKS_OWNER
+from fastapi.testclient import TestClient
 from graph_service.app import create_app as create_graph_app
 from graph_service.consumer import GraphConsumer
 from tasks_api.app import create_app as create_tasks_app
 from tasks_api.auth import TokenVerifier
 from tasks_api.publisher import publish
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
 
 ISSUER = "empire-graph-test"
 

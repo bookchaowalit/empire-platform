@@ -18,12 +18,12 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-
 from conftest import create_workspace
-from empire_platform.devtoken import key_pair, mint
-from empire_platform.permissions import TASKS_OWNER
 from tasks_api.app import create_app
 from tasks_api.auth import TokenVerifier
+
+from empire_platform.devtoken import key_pair, mint
+from empire_platform.permissions import TASKS_OWNER
 
 ADAPTER_DIR = next(
     (
@@ -221,7 +221,7 @@ def read_scenario(store) -> dict:
     )
     store.upsert_external("seed", "S-1", {"title": "Seeded child", "parent_task_id": a})
     out["parent_upsert"] = store.find_external("seed", "S-1")["parent_task_id"] == a
-    numbers = lambda rows: sorted(r["title"] for r in rows)  # noqa: E731
+    numbers = lambda rows: sorted(r["title"] for r in rows)
     out["project"] = numbers(store.list(project="alpha"))
     out["priority"] = numbers(store.list(priority_max=2))
     out["due_window"] = numbers(
@@ -276,7 +276,7 @@ def read_scenario(store) -> dict:
             r["task"] == a,
             r["target_type"],
             r["target_id"],
-            r["relation"],  # noqa: E731
+            r["relation"],
             sorted(r["attributes"].items()),
         )
         for r in rows

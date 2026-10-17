@@ -7,7 +7,6 @@ import os
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
 
@@ -16,7 +15,7 @@ from empire_platform.devdb import HostedCluster
 
 
 class FakeNeon(BaseHTTPRequestHandler):
-    state: dict = {}
+    state: dict = {}  # noqa: RUF012 - shared fake-server state, reset by each test
 
     def log_message(self, *args):  # quiet
         pass

@@ -9,9 +9,9 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry
 from referencing.jsonschema import DRAFT202012
+from test_tasks_api import client, create, keys, superuser, token, world  # noqa: F401  (fixtures)
 
 from empire_platform.contracts import OPENAPI, render
-from test_tasks_api import client, create, keys, superuser, token, world  # noqa: F401  (fixtures)
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts" / "tasks" / "v1"
 SPEC = json.loads(OPENAPI.read_text(encoding="utf-8"))
@@ -53,7 +53,7 @@ def test_openapi_declares_every_operation_and_error():
             assert "401" in operation["responses"], (method, path)
 
 
-def test_responses_follow_the_contract(client, token, world):  # noqa: F811
+def test_responses_follow_the_contract(client, token, world):
     owner = token(world.owner, world.alpha)
     task = create(client, owner, tags=["contract"], due_date="2026-10-20")
     validator("Task").validate(task)
@@ -81,7 +81,7 @@ def test_responses_follow_the_contract(client, token, world):  # noqa: F811
         {"title": "x", "unexpected": True},
     ],
 )
-def test_invalid_bodies_are_rejected(client, token, world, body):  # noqa: F811
+def test_invalid_bodies_are_rejected(client, token, world, body):
     assert (
         client.post(
             "/v1/tasks", json=body, headers=token(world.owner, world.alpha)
@@ -90,7 +90,7 @@ def test_invalid_bodies_are_rejected(client, token, world, body):  # noqa: F811
     )
 
 
-def test_invalid_link_target_is_rejected(client, token, world):  # noqa: F811
+def test_invalid_link_target_is_rejected(client, token, world):
     owner = token(world.owner, world.alpha)
     task = create(client, owner)
     response = client.post(
@@ -105,7 +105,7 @@ def test_invalid_link_target_is_rejected(client, token, world):  # noqa: F811
     assert response.status_code == 422
 
 
-def test_outbox_events_follow_the_event_contract(client, token, world, cluster):  # noqa: F811
+def test_outbox_events_follow_the_event_contract(client, token, world, cluster):
     owner = token(world.owner, world.alpha)
     task = create(client, owner)
     client.post(f"/v1/tasks/{task['id']}/complete", headers=owner)
