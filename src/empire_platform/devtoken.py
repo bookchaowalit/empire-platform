@@ -28,6 +28,7 @@ DEFAULT_AUDIENCES = ("tasks-api", "graph-api", "platform-api", "decisions-api", 
                      "notifications-api", "goals-api", "projects-api", "roles-skills-api", "accounts-api",
                      "operating-api", "intake-api", "automation-api",
                      "content-api", "learning-api", "diary-api", "opportunities-api", "health-api", "time-api",
+                     "radar-api",
                      "finance-accounts-api", "transactions-api", "budgets-api", "cash-flow-api", "reconciliations-api",
                      "business-assets-api", "investments-api", "liabilities-api", "subscriptions-api", "tax-api")
 
