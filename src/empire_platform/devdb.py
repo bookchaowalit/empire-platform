@@ -65,7 +65,9 @@ def pg_bin_dir() -> Path:
     found = shutil.which("pg_ctl")
     if found:
         return Path(found).parent
-    raise SystemExit("PostgreSQL binaries not found; install the dev extra or set EMPIRE_PG_BIN")
+    raise SystemExit(
+        "PostgreSQL binaries not found; install the dev extra or set EMPIRE_PG_BIN"
+    )
 
 
 @dataclass
@@ -75,19 +77,39 @@ class Cluster:
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(pg_bin_dir() / args[0]), *args[1:]], check=True, capture_output=True, text=True
+            [str(pg_bin_dir() / args[0]), *args[1:]],
+            check=True,
+            capture_output=True,
+            text=True,
         )
 
     def init(self) -> None:
         self.data_dir.parent.mkdir(parents=True, exist_ok=True)
-        self._run("initdb", "-D", str(self.data_dir), "-U", SUPERUSER, "--auth=trust",
-                  "--encoding=UTF8", "--locale=C")
+        self._run(
+            "initdb",
+            "-D",
+            str(self.data_dir),
+            "-U",
+            SUPERUSER,
+            "--auth=trust",
+            "--encoding=UTF8",
+            "--locale=C",
+        )
 
     def start(self) -> None:
         self.socket_dir.mkdir(parents=True, exist_ok=True)
         options = f"-c listen_addresses='' -k {self.socket_dir} -p {PORT}"
-        self._run("pg_ctl", "-D", str(self.data_dir), "-o", options, "-w",
-                  "-l", str(self.data_dir / "server.log"), "start")
+        self._run(
+            "pg_ctl",
+            "-D",
+            str(self.data_dir),
+            "-o",
+            options,
+            "-w",
+            "-l",
+            str(self.data_dir / "server.log"),
+            "start",
+        )
 
     def stop(self) -> None:
         if (self.data_dir / "postmaster.pid").exists():
@@ -99,11 +121,17 @@ class Cluster:
     def conninfo(self, role: str, dbname: str = DATABASE) -> str:
         return f"host={self.socket_dir} port={PORT} user={role} dbname={dbname}"
 
-    def connect(self, role: str, dbname: str = DATABASE, **kwargs) -> psycopg.Connection:
+    def connect(
+        self, role: str, dbname: str = DATABASE, **kwargs
+    ) -> psycopg.Connection:
         return psycopg.connect(self.conninfo(role, dbname), **kwargs)
 
 
-HOSTED_SECRETS = Path(os.environ.get("EMPIRE_DB_SECRETS", Path.home() / ".config" / "empire-platform" / "db.env"))
+HOSTED_SECRETS = Path(
+    os.environ.get(
+        "EMPIRE_DB_SECRETS", Path.home() / ".config" / "empire-platform" / "db.env"
+    )
+)
 
 
 @dataclass
@@ -123,7 +151,9 @@ class HostedCluster:
         urls: dict[str, str] = {}
         if secrets.is_file():
             if secrets.stat().st_mode & 0o077:
-                raise SystemExit(f"{secrets} must be readable by its owner only (chmod 600)")
+                raise SystemExit(
+                    f"{secrets} must be readable by its owner only (chmod 600)"
+                )
             for line in secrets.read_text(encoding="utf-8").splitlines():
                 key, sep, value = line.strip().partition("=")
                 if sep and key.startswith("EMPIRE_DB_URL_"):
@@ -136,17 +166,23 @@ class HostedCluster:
     def conninfo(self, role: str, dbname: str = DATABASE) -> str:
         role = "empire_migrator" if role == SUPERUSER else role
         if role not in self.urls:
-            raise SystemExit(f"no connection URL for role {role}: set EMPIRE_DB_URL_{role.upper()}")
+            raise SystemExit(
+                f"no connection URL for role {role}: set EMPIRE_DB_URL_{role.upper()}"
+            )
         url = self.urls[role]
         parts = urllib.parse.urlsplit(url)
         query = urllib.parse.parse_qs(parts.query)
         # Unix-socket URLs (host=/path) are local and have no TLS; everything else must verify TLS.
         local = any(host.startswith("/") for host in query.get("host", []))
         if not local and query.get("sslmode", [""])[-1] not in HOSTED_SSLMODES:
-            raise SystemExit(f"connection URL for role {role} needs sslmode=require, verify-ca or verify-full")
+            raise SystemExit(
+                f"connection URL for role {role} needs sslmode=require, verify-ca or verify-full"
+            )
         return url
 
-    def connect(self, role: str, dbname: str = DATABASE, **kwargs) -> psycopg.Connection:
+    def connect(
+        self, role: str, dbname: str = DATABASE, **kwargs
+    ) -> psycopg.Connection:
         # Neon's pooler cannot keep prepared statements; direct endpoints are used.
         return psycopg.connect(self.conninfo(role, dbname), **kwargs)
 
@@ -166,18 +202,24 @@ def bootstrap(cluster: Cluster) -> None:
     """Create roles and the database; safe to run more than once."""
     with cluster.connect(SUPERUSER, "postgres", autocommit=True) as conn:
         conn.execute(BOOTSTRAP.read_text(encoding="utf-8"))
-        exists = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (DATABASE,)).fetchone()
+        exists = conn.execute(
+            "SELECT 1 FROM pg_database WHERE datname = %s", (DATABASE,)
+        ).fetchone()
         if not exists:
             conn.execute(f"CREATE DATABASE {DATABASE} OWNER empire_migrator")
     with cluster.connect(SUPERUSER, DATABASE, autocommit=True) as conn:
         conn.execute(f"REVOKE ALL ON DATABASE {DATABASE} FROM PUBLIC")
-        conn.execute(f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api,"
-                     " platform_monitor, identity_api")
+        conn.execute(
+            f"GRANT CONNECT ON DATABASE {DATABASE} TO platform_api, tasks_api, tasks_publisher, graph_api,"
+            " platform_monitor, identity_api"
+        )
         conn.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
 
 def migration_files() -> list[Path]:
-    files = [path for directory in MIGRATION_DIRS for path in sorted(directory.glob("*.sql"))]
+    files = [
+        path for directory in MIGRATION_DIRS for path in sorted(directory.glob("*.sql"))
+    ]
     names = [path.name for path in files]
     if len(names) != len(set(names)):
         raise SystemExit("duplicate migration file names")
@@ -193,7 +235,9 @@ def migrate(cluster: Cluster, dbname: str = DATABASE) -> list[str]:
             " name text PRIMARY KEY, sha256 text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())"
         )
         conn.commit()
-        done = dict(conn.execute("SELECT name, sha256 FROM public.schema_migrations").fetchall())
+        done = dict(
+            conn.execute("SELECT name, sha256 FROM public.schema_migrations").fetchall()
+        )
         for path in migration_files():
             sql = path.read_text(encoding="utf-8")
             digest = hashlib.sha256(sql.encode()).hexdigest()
@@ -212,8 +256,12 @@ def migrate(cluster: Cluster, dbname: str = DATABASE) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="empire-db", description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["start", "stop", "reset", "status", "migrate", "psql"])
+    parser = argparse.ArgumentParser(
+        prog="empire-db", description=__doc__.splitlines()[0]
+    )
+    parser.add_argument(
+        "command", choices=["start", "stop", "reset", "status", "migrate", "psql"]
+    )
     parser.add_argument("--role", default="platform_api")
     args = parser.parse_args(argv)
     cluster = default_cluster()

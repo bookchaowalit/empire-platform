@@ -1,0 +1,5 @@
+[format]
+# Left unformatted on purpose: reformatting would rewrite the lines that hold synthetic test
+# credentials (each marked `# pragma: allowlist secret`), and secret scanners on the PR then
+# report them as new.
+exclude = ["tests/test_neon.py"]

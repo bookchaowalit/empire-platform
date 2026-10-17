@@ -61,18 +61,32 @@ def shadow_url(raw: str | None) -> str | None:
 class IdentityShadow:
     """Callable handed to the decide route; ``start=False`` keeps it synchronous for tests."""
 
-    def __init__(self, url: str, client: httpx.Client | None = None, *, start: bool = True,
-                 queue_size: int = QUEUE_SIZE) -> None:
+    def __init__(
+        self,
+        url: str,
+        client: httpx.Client | None = None,
+        *,
+        start: bool = True,
+        queue_size: int = QUEUE_SIZE,
+    ) -> None:
         self.url = url
         self.client = client or httpx.Client(timeout=TIMEOUT, follow_redirects=False)
         self.dropped = 0
         self._queue: queue.Queue[tuple[Any, ...]] | None = None
         if start:
             self._queue = queue.Queue(maxsize=queue_size)
-            threading.Thread(target=self._work, name="identity-shadow", daemon=True).start()
+            threading.Thread(
+                target=self._work, name="identity-shadow", daemon=True
+            ).start()
 
-    def __call__(self, body: dict[str, Any], authorization: str | None, channel: str | None,
-                 decision: str, reason: str) -> None:
+    def __call__(
+        self,
+        body: dict[str, Any],
+        authorization: str | None,
+        channel: str | None,
+        decision: str,
+        reason: str,
+    ) -> None:
         job = (body, authorization, channel, decision, reason)
         if self._queue is None:
             self.compare(*job)
@@ -91,12 +105,20 @@ class IdentityShadow:
             try:
                 self.compare(*job)
             except Exception as exc:  # noqa: BLE001 - the mirror must never stop or surface errors
-                log.warning("identity_shadow outcome=error error=%s", type(exc).__name__)
+                log.warning(
+                    "identity_shadow outcome=error error=%s", type(exc).__name__
+                )
             finally:
                 self._queue.task_done()
 
-    def compare(self, body: dict[str, Any], authorization: str | None, channel: str | None,
-                decision: str, reason: str) -> None:
+    def compare(
+        self,
+        body: dict[str, Any],
+        authorization: str | None,
+        channel: str | None,
+        decision: str,
+        reason: str,
+    ) -> None:
         action = body.get("action")
         headers = {"Authorization": authorization or ""}
         if channel is not None:
@@ -104,11 +126,20 @@ class IdentityShadow:
         try:
             response = self.client.post(self.url, json=body, headers=headers)
         except httpx.HTTPError as exc:
-            log.warning("identity_shadow outcome=unreachable action=%s error=%s", action, type(exc).__name__)
+            log.warning(
+                "identity_shadow outcome=unreachable action=%s error=%s",
+                action,
+                type(exc).__name__,
+            )
             return
         if response.status_code != 200:
-            log.warning("identity_shadow outcome=mismatch action=%s primary=%s/%s shadow_status=%s",
-                        action, decision, reason, response.status_code)
+            log.warning(
+                "identity_shadow outcome=mismatch action=%s primary=%s/%s shadow_status=%s",
+                action,
+                decision,
+                reason,
+                response.status_code,
+            )
             return
         try:
             shadow = response.json()
@@ -116,7 +147,19 @@ class IdentityShadow:
         except (ValueError, KeyError, TypeError):
             log.warning("identity_shadow outcome=invalid_response action=%s", action)
             return
-        outcome = "match" if (shadow_decision, shadow_reason) == (decision, reason) else "mismatch"
+        outcome = (
+            "match"
+            if (shadow_decision, shadow_reason) == (decision, reason)
+            else "mismatch"
+        )
         level = logging.INFO if outcome == "match" else logging.WARNING
-        log.log(level, "identity_shadow outcome=%s action=%s primary=%s/%s shadow=%s/%s",
-                outcome, action, decision, reason, _code(shadow_decision), _code(shadow_reason))
+        log.log(
+            level,
+            "identity_shadow outcome=%s action=%s primary=%s/%s shadow=%s/%s",
+            outcome,
+            action,
+            decision,
+            reason,
+            _code(shadow_decision),
+            _code(shadow_reason),
+        )

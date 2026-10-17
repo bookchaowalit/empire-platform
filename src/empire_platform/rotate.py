@@ -50,8 +50,16 @@ class Target:
 
 def load_targets(path: Path = DEPLOYMENTS) -> tuple[list[Target], int]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    targets = [Target(automation=t["automation"], provider=t["provider"], checkout=t["checkout"],
-                      variable=t["variable"], service=t.get("service")) for t in data["targets"]]
+    targets = [
+        Target(
+            automation=t["automation"],
+            provider=t["provider"],
+            checkout=t["checkout"],
+            variable=t["variable"],
+            service=t.get("service"),
+        )
+        for t in data["targets"]
+    ]
     for target in targets:
         if target.provider not in {"railway", "vercel"}:
             raise ValueError(f"unknown provider {target.provider!r}")
@@ -79,8 +87,12 @@ def read_token_file(tokens: Path, automation: str) -> str | None:
 
 
 def railway_value(run: Runner, cwd: Path, service: str, variable: str) -> str | None:
-    completed = run(["railway", "variables", "--service", service, "--json"], cwd=cwd,
-                    capture_output=True, text=True)
+    completed = run(
+        ["railway", "variables", "--service", service, "--json"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+    )
     if completed.returncode != 0:
         return None
     try:
@@ -90,8 +102,15 @@ def railway_value(run: Runner, cwd: Path, service: str, variable: str) -> str | 
     return value if isinstance(value, str) else None
 
 
-def due_automations(targets: list[Target], tokens: Path, checkouts: Path, within_days: int,
-                    run: Runner, now: float, force: bool = False) -> dict[str, str]:
+def due_automations(
+    targets: list[Target],
+    tokens: Path,
+    checkouts: Path,
+    within_days: int,
+    run: Runner,
+    now: float,
+    force: bool = False,
+) -> dict[str, str]:
     """automation -> reason, for every automation whose token must be rotated."""
     limit = now + within_days * DAY
     due: dict[str, str] = {}
@@ -106,14 +125,23 @@ def due_automations(targets: list[Target], tokens: Path, checkouts: Path, within
             due[target.automation] = "local token missing or expiring"
             continue
         if target.provider == "railway":
-            deployed_exp = token_exp(railway_value(run, checkouts / target.checkout, target.service, target.variable))
+            deployed_exp = token_exp(
+                railway_value(
+                    run, checkouts / target.checkout, target.service, target.variable
+                )
+            )
             if deployed_exp is None or deployed_exp < limit:
                 due[target.automation] = "deployed token missing or expiring"
     return due
 
 
-def local_due(tokens: Path, known: set[str], within_days: int, now: float,
-              skip: set[str] = frozenset()) -> dict[str, str]:
+def local_due(
+    tokens: Path,
+    known: set[str],
+    within_days: int,
+    now: float,
+    skip: set[str] = frozenset(),
+) -> dict[str, str]:
     """Token files used only on this machine (CLIs, MCP, monitors) that expire soon.
 
     Only automations from the registry count; short-lived tokens (a lifetime of a day or
@@ -140,20 +168,34 @@ def local_due(tokens: Path, known: set[str], within_days: int, now: float,
     return due
 
 
-def push_railway(run: Runner, cwd: Path, service: str, variable: str, token: str) -> bool:
-    completed = run(["railway", "variables", "--service", service, "--set-from-stdin", variable],
-                    cwd=cwd, input=token, capture_output=True, text=True)
+def push_railway(
+    run: Runner, cwd: Path, service: str, variable: str, token: str
+) -> bool:
+    completed = run(
+        ["railway", "variables", "--service", service, "--set-from-stdin", variable],
+        cwd=cwd,
+        input=token,
+        capture_output=True,
+        text=True,
+    )
     return completed.returncode == 0
 
 
 def push_vercel(run: Runner, cwd: Path, variable: str, token: str) -> bool:
-    completed = run(["vercel", "env", "add", variable, "production", "--force"],
-                    cwd=cwd, input=token, capture_output=True, text=True)
+    completed = run(
+        ["vercel", "env", "add", variable, "production", "--force"],
+        cwd=cwd,
+        input=token,
+        capture_output=True,
+        text=True,
+    )
     return completed.returncode == 0
 
 
 def deploy_vercel(run: Runner, cwd: Path) -> bool:
-    completed = run(["vercel", "deploy", "--prod", "--yes"], cwd=cwd, capture_output=True, text=True)
+    completed = run(
+        ["vercel", "deploy", "--prod", "--yes"], cwd=cwd, capture_output=True, text=True
+    )
     return completed.returncode == 0
 
 
@@ -161,19 +203,40 @@ def emit(event: dict[str, Any]) -> None:
     print(json.dumps({"event": "token.rotate", **event}, sort_keys=True), flush=True)
 
 
-def rotate(targets: list[Target], due: dict[str, str], tokens: Path, checkouts: Path,
-           mint: Callable[[list[str]], None], run: Runner, dry_run: bool) -> int:
+def rotate(
+    targets: list[Target],
+    due: dict[str, str],
+    tokens: Path,
+    checkouts: Path,
+    mint: Callable[[list[str]], None],
+    run: Runner,
+    dry_run: bool,
+) -> int:
     """Mint the due automations, push their tokens; returns the number of failures."""
     if not due:
         emit({"action": "none", "reason": "no token is due"})
         return 0
     for automation, reason in sorted(due.items()):
-        emit({"action": "plan" if dry_run else "mint", "automation": automation, "reason": reason})
+        emit(
+            {
+                "action": "plan" if dry_run else "mint",
+                "automation": automation,
+                "reason": reason,
+            }
+        )
     if dry_run:
         for target in targets:
             if target.automation in due:
-                emit({"action": "would-push", "automation": target.automation, "provider": target.provider,
-                      "checkout": target.checkout, "service": target.service, "variable": target.variable})
+                emit(
+                    {
+                        "action": "would-push",
+                        "automation": target.automation,
+                        "provider": target.provider,
+                        "checkout": target.checkout,
+                        "service": target.service,
+                        "variable": target.variable,
+                    }
+                )
         return 0
     mint(sorted(due))
     failures = 0
@@ -185,8 +248,15 @@ def rotate(targets: list[Target], due: dict[str, str], tokens: Path, checkouts: 
         cwd = checkouts / target.checkout
         if not token or not cwd.is_dir():
             failures += 1
-            emit({"action": "push", "automation": target.automation, "variable": target.variable,
-                  "ok": False, "error": "token file or checkout missing"})
+            emit(
+                {
+                    "action": "push",
+                    "automation": target.automation,
+                    "variable": target.variable,
+                    "ok": False,
+                    "error": "token file or checkout missing",
+                }
+            )
             continue
         if target.provider == "railway":
             ok = push_railway(run, cwd, target.service, target.variable, token)
@@ -195,9 +265,20 @@ def rotate(targets: list[Target], due: dict[str, str], tokens: Path, checkouts: 
             if ok and target.checkout not in vercel_checkouts:
                 vercel_checkouts.append(target.checkout)
         failures += 0 if ok else 1
-        emit({"action": "push", "automation": target.automation, "provider": target.provider,
-              "checkout": target.checkout, "service": target.service, "variable": target.variable,
-              "ok": ok, "expires": time.strftime("%Y-%m-%d", time.gmtime(token_exp(token) or 0))})
+        emit(
+            {
+                "action": "push",
+                "automation": target.automation,
+                "provider": target.provider,
+                "checkout": target.checkout,
+                "service": target.service,
+                "variable": target.variable,
+                "ok": ok,
+                "expires": time.strftime(
+                    "%Y-%m-%d", time.gmtime(token_exp(token) or 0)
+                ),
+            }
+        )
     for checkout in vercel_checkouts:
         ok = deploy_vercel(run, checkouts / checkout)
         failures += 0 if ok else 1
@@ -206,41 +287,81 @@ def rotate(targets: list[Target], due: dict[str, str], tokens: Path, checkouts: 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="empire-token-rotate", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="empire-token-rotate", description=__doc__.splitlines()[0]
+    )
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--tokens", type=Path, required=True)
     parser.add_argument("--key-dir", type=Path, required=True)
     parser.add_argument("--issuer", required=True)
     parser.add_argument("--ttl-days", type=float, default=30.0)
-    parser.add_argument("--checkouts", type=Path,
-                        default=Path(os.environ.get("EMPIRE_CHECKOUTS_ROOT", str(REPO_ROOT.parent))))
+    parser.add_argument(
+        "--checkouts",
+        type=Path,
+        default=Path(os.environ.get("EMPIRE_CHECKOUTS_ROOT", str(REPO_ROOT.parent))),
+    )
     parser.add_argument("--deployments", type=Path, default=DEPLOYMENTS)
-    parser.add_argument("--dry-run", action="store_true", help="show what would rotate; mint and push nothing")
-    parser.add_argument("--force", action="store_true", help="rotate every deployed automation now")
-    parser.add_argument("--only", action="append", metavar="AUTOMATION",
-                        help="limit the run to these automations (repeatable)")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show what would rotate; mint and push nothing",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="rotate every deployed automation now"
+    )
+    parser.add_argument(
+        "--only",
+        action="append",
+        metavar="AUTOMATION",
+        help="limit the run to these automations (repeatable)",
+    )
     args = parser.parse_args(argv)
 
     targets, within = load_targets(args.deployments)
     if args.only:
         targets = [t for t in targets if t.automation in set(args.only)]
-    due = due_automations(targets, args.tokens, args.checkouts, within, subprocess.run, time.time(), args.force)
+    due = due_automations(
+        targets,
+        args.tokens,
+        args.checkouts,
+        within,
+        subprocess.run,
+        time.time(),
+        args.force,
+    )
     if not args.only:
-        registry = json.loads((REPO_ROOT / "contracts" / "automations" / "v1" / "automations.json").read_text())
+        registry = json.loads(
+            (
+                REPO_ROOT / "contracts" / "automations" / "v1" / "automations.json"
+            ).read_text()
+        )
         known = {item["id"] for item in registry["automations"]}
         due.update(local_due(args.tokens, known, within, time.time(), skip=set(due)))
 
     def mint(automations: list[str]) -> None:
         from empire_platform import automations as provisioning
 
-        argv_ = ["provision", "--workspace", args.workspace, "--tokens", str(args.tokens),
-                 "--ttl-days", str(args.ttl_days), "--key-dir", str(args.key_dir), "--issuer", args.issuer]
+        argv_ = [
+            "provision",
+            "--workspace",
+            args.workspace,
+            "--tokens",
+            str(args.tokens),
+            "--ttl-days",
+            str(args.ttl_days),
+            "--key-dir",
+            str(args.key_dir),
+            "--issuer",
+            args.issuer,
+        ]
         for name in automations:
             argv_ += ["--only", name]
         if provisioning.main(argv_) != 0:
             raise SystemExit("provisioning failed")
 
-    failures = rotate(targets, due, args.tokens, args.checkouts, mint, subprocess.run, args.dry_run)
+    failures = rotate(
+        targets, due, args.tokens, args.checkouts, mint, subprocess.run, args.dry_run
+    )
     return 1 if failures else 0
 
 

@@ -57,15 +57,27 @@ class AuthorizationDenied(Exception):
 
 def _call(conn: psycopg.Connection, request: Request, *, lock: bool) -> Decision:
     # Tuple rows regardless of the connection's row factory.
-    row = conn.cursor(row_factory=tuple_row).execute(
-        "SELECT decision, reason, decision_id FROM platform.authorize("
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (
-            request.actor, request.workspace, request.action, request.resource.type,
-            request.resource.id, request.resource.workspace, request.delegation,
-            request.on_behalf_of, request.approval, request.channel, lock,
-        ),
-    ).fetchone()
+    row = (
+        conn.cursor(row_factory=tuple_row)
+        .execute(
+            "SELECT decision, reason, decision_id FROM platform.authorize("
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                request.actor,
+                request.workspace,
+                request.action,
+                request.resource.type,
+                request.resource.id,
+                request.resource.workspace,
+                request.delegation,
+                request.on_behalf_of,
+                request.approval,
+                request.channel,
+                lock,
+            ),
+        )
+        .fetchone()
+    )
     return Decision(row[0], row[1], row[2])
 
 

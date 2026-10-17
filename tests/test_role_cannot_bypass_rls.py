@@ -71,7 +71,10 @@ def test_audit_events_cannot_be_changed_by_the_runtime_role(api):
         " VALUES (%s, %s, 'platform', 'test', 'workspace', 'x')",
         (workspace.id, execution),
     )
-    for statement in ("UPDATE platform.audit_events SET action = 'edited'", "DELETE FROM platform.audit_events"):
+    for statement in (
+        "UPDATE platform.audit_events SET action = 'edited'",
+        "DELETE FROM platform.audit_events",
+    ):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with api.transaction():
                 api.execute(statement)

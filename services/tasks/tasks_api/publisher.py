@@ -33,8 +33,12 @@ class PublishReport:
     errors: list[str] = field(default_factory=list)
 
 
-def publish(connect: Callable[[], psycopg.Connection], deliver: Callable[[dict[str, Any]], Any],
-            *, batch: int = 100) -> PublishReport:
+def publish(
+    connect: Callable[[], psycopg.Connection],
+    deliver: Callable[[dict[str, Any]], Any],
+    *,
+    batch: int = 100,
+) -> PublishReport:
     report = PublishReport()
     with connect() as conn:
         conn.row_factory = dict_row
@@ -49,7 +53,9 @@ def publish(connect: Callable[[], psycopg.Connection], deliver: Callable[[dict[s
             event = json.loads(json.dumps(row, default=str))
             try:
                 deliver(event)
-            except Exception as exc:  # any consumer failure: retry later, never lose the event
+            except (
+                Exception
+            ) as exc:  # any consumer failure: retry later, never lose the event
                 report.failed += 1
                 report.errors.append(f"{row['id']}: {type(exc).__name__}")
                 conn.execute(
@@ -59,15 +65,24 @@ def publish(connect: Callable[[], psycopg.Connection], deliver: Callable[[dict[s
                     (type(exc).__name__, MAX_BACKOFF_SECONDS, row["id"]),
                 )
                 continue
-            conn.execute("UPDATE tasks.outbox SET published_at = now(), last_error = NULL WHERE id = %s", (row["id"],))
+            conn.execute(
+                "UPDATE tasks.outbox SET published_at = now(), last_error = NULL WHERE id = %s",
+                (row["id"],),
+            )
             report.delivered += 1
         conn.commit()
     return report
 
 
-def run_loop(step: Callable[[], PublishReport], interval: float, stop: threading.Event,
-             *, max_iterations: int | None = None, max_backoff: float = 300.0,
-             log: Callable[[str], Any] | None = None) -> int:
+def run_loop(
+    step: Callable[[], PublishReport],
+    interval: float,
+    stop: threading.Event,
+    *,
+    max_iterations: int | None = None,
+    max_backoff: float = 300.0,
+    log: Callable[[str], Any] | None = None,
+) -> int:
     """Repeat ``step`` until ``stop`` is set; one JSON line of counts per batch.
 
     A failed delivery is retried by the outbox itself; a database error here
@@ -80,10 +95,21 @@ def run_loop(step: Callable[[], PublishReport], interval: float, stop: threading
         iterations += 1
         try:
             report = step()
-        except Exception as exc:  # transient database or network error: back off, never crash-loop
+        except (
+            Exception
+        ) as exc:  # transient database or network error: back off, never crash-loop
             errors += 1
             delay = min(max_backoff, max(interval, 1.0) * 2 ** min(errors, 10))
-            log(json.dumps({"delivered": 0, "failed": 0, "error": type(exc).__name__, "retry_in": delay}))
+            log(
+                json.dumps(
+                    {
+                        "delivered": 0,
+                        "failed": 0,
+                        "error": type(exc).__name__,
+                        "retry_in": delay,
+                    }
+                )
+            )
         else:
             errors = 0
             delay = interval
@@ -96,19 +122,36 @@ def main(argv: list[str] | None = None) -> int:
     from empire_platform.devdb import default_cluster
     from graph_service.consumer import GraphConsumer
 
-    parser = argparse.ArgumentParser(prog="empire-publish", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        prog="empire-publish", description=__doc__.splitlines()[0]
+    )
     parser.add_argument("--batch", type=int, default=100)
-    parser.add_argument("--loop", type=float, metavar="SECONDS", help="repeat forever, sleeping SECONDS between batches")
+    parser.add_argument(
+        "--loop",
+        type=float,
+        metavar="SECONDS",
+        help="repeat forever, sleeping SECONDS between batches",
+    )
     args = parser.parse_args(argv)
     cluster = default_cluster()
     consumer = GraphConsumer(lambda: cluster.connect("graph_api"))
 
     def step() -> PublishReport:
-        return publish(lambda: cluster.connect("tasks_publisher"), consumer, batch=args.batch)
+        return publish(
+            lambda: cluster.connect("tasks_publisher"), consumer, batch=args.batch
+        )
 
     if args.loop is None:
         report = step()
-        print(json.dumps({"delivered": report.delivered, "failed": report.failed, "errors": report.errors}))
+        print(
+            json.dumps(
+                {
+                    "delivered": report.delivered,
+                    "failed": report.failed,
+                    "errors": report.errors,
+                }
+            )
+        )
         return 0 if not report.failed else 1
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):

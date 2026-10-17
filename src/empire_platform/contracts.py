@@ -1,6 +1,6 @@
 """Write generated contracts so drift shows up in review and in tests.
 
-    empire-contracts [--check]
+empire-contracts [--check]
 """
 
 from __future__ import annotations
@@ -33,7 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     current = OPENAPI.read_text(encoding="utf-8") if OPENAPI.exists() else ""
     if args.check:
         if current != render():
-            print(f"stale: {OPENAPI.relative_to(REPO_ROOT)}; run empire-contracts", file=sys.stderr)
+            print(
+                f"stale: {OPENAPI.relative_to(REPO_ROOT)}; run empire-contracts",
+                file=sys.stderr,
+            )
             return 1
         print("contracts are current")
         return 0
